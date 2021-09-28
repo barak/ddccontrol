@@ -12,8 +12,11 @@ ddccontrol (0.5.2-1) UNRELEASED; urgency=medium
     - thanks to Miroslav Kravec for doing a great job with it for so long
   * Rules-Requires-Root: no
   * Forward port patches
+  * Adjust to move from /usr/lib/*/ddccontrol/ to /usr/libexec/ddccontrol/
+  * Install html from installation directory
+  * Install systemd-related service files and such
 
- -- Barak A. Pearlmutter <bap@debian.org>  Tue, 28 Sep 2021 13:02:10 +0100
+ -- Barak A. Pearlmutter <bap@debian.org>  Tue, 28 Sep 2021 14:56:03 +0100
 
 ddccontrol (0.4.4-1.2) unstable; urgency=medium
 
