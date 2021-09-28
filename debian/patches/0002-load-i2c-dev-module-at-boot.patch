@@ -9,10 +9,10 @@ Subject: load i2c-dev module at boot
  create mode 100644 src/lib/ddccontrol-i2c-dev.conf
 
 diff --git a/src/lib/Makefile.am b/src/lib/Makefile.am
-index daa2795..1887347 100644
+index 8dbba20..ad130b1 100644
 --- a/src/lib/Makefile.am
 +++ b/src/lib/Makefile.am
-@@ -8,6 +8,9 @@ pkgconfig_DATA = ddccontrol.pc
+@@ -9,6 +9,9 @@ pkgconfig_DATA = ddccontrol.pc
  
  $(pkgconfig_DATA): $(srcdir)/ddccontrol.pc.in $(top_builddir)/config.status
  

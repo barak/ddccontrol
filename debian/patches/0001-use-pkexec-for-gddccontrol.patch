@@ -10,10 +10,10 @@ Subject: use pkexec for gddccontrol
  create mode 100644 src/gddccontrol/org.ddccontrol.pkexec.gddccontrol.policy
 
 diff --git a/src/gddccontrol/Makefile.am b/src/gddccontrol/Makefile.am
-index ca30f4c..c5359d2 100644
+index 5752d5c..7bb4973 100644
 --- a/src/gddccontrol/Makefile.am
 +++ b/src/gddccontrol/Makefile.am
-@@ -16,6 +16,9 @@ desktop_in_files = gddccontrol.desktop.in
+@@ -15,6 +15,9 @@ desktop_in_files = gddccontrol.desktop.in
  desktop_DATA = $(desktop_in_files:.desktop.in=.desktop)
  @INTLTOOL_DESKTOP_RULE@
  

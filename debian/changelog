@@ -1,4 +1,4 @@
-ddccontrol (0.4.4-1.3) UNRELEASED; urgency=medium
+ddccontrol (0.5.2-1) UNRELEASED; urgency=medium
 
   * Include .pc file in -dev package
   * Trim trailing whitespace.
@@ -11,8 +11,9 @@ ddccontrol (0.4.4-1.3) UNRELEASED; urgency=medium
   * Take over maintenance of package (closes: #980404)
     - thanks to Miroslav Kravec for doing a great job with it for so long
   * Rules-Requires-Root: no
+  * Forward port patches
 
- -- Barak A. Pearlmutter <bap@debian.org>  Tue, 28 Sep 2021 10:50:48 +0100
+ -- Barak A. Pearlmutter <bap@debian.org>  Tue, 28 Sep 2021 13:02:10 +0100
 
 ddccontrol (0.4.4-1.2) unstable; urgency=medium
 
