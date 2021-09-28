@@ -6,7 +6,7 @@ LDFLAGS+=-Wl,--as-needed
 export LIBS=-lm
 
 %:
-	dh $@ --with autoreconf
+	dh $@
 
 override_dh_autoreconf:
 	./autogen.sh
