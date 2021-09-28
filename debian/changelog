@@ -1,3 +1,11 @@
+ddccontrol (0.4.4-1.2) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Fix FTBFS with glibc 2.30+ due to sys/io.h removal on armel/armhf.
+    (Closes: #979283)
+
+ -- Adrian Bunk <bunk@debian.org>  Fri, 05 Feb 2021 17:11:39 +0200
+
 ddccontrol (0.4.4-1.1) unstable; urgency=medium
 
   * Non-maintainer upload.
