@@ -16,6 +16,7 @@ ddccontrol (0.5.2-1) UNRELEASED; urgency=medium
   * Install html from installation directory
   * Install systemd-related service files and such
   * Patch to link libdbusinterface into libddccontrol_dbus_client
+  * Add attribution line to debian/README.Debian
 
  -- Barak A. Pearlmutter <bap@debian.org>  Tue, 28 Sep 2021 15:27:06 +0100
 
