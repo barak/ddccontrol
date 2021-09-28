@@ -1,7 +1,6 @@
 /*
-    ddc/ci interface functions header
-    Copyright(c) 2004 Oleg I. Vdovikin (oleg@cs.msu.su)
-    Copyright(c) 2004-2005 Nicolas Boichat (nicolas@boichat.ch)
+    ddc/ci internal functions header for command line tool
+    Copyright(c) 2018 Miroslav Kravec (kravec.miroslav@gmail.com)
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -18,24 +17,11 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 */
 
-#ifndef DDCCI_INTERNAL_H
-#define DDCCI_INTERNAL_H
+#ifndef DDCCONTROL_H
+#define DDCCONTROL_H
 
-#ifdef HAVE_GETTEXT
-#include <libintl.h>
-#include <locale.h>
-#define _(String) gettext (String)
-#define gettext_noop(String) String
-#define N_(String) gettext_noop (String)
-#else
-#define _(String) String
-#define N_(String) String
-#endif
+#include "ddcci.h"
 
-struct monitor_vtable {
-	int (*readctrl)(struct monitor* mon, unsigned char ctrl, unsigned short *value, unsigned short *maximum);
-	int (*writectrl)(struct monitor* mon, unsigned char ctrl, unsigned short value, int delay);
-	int (*close)(struct monitor* mon);
-};
+void print_control_value(struct monitor *mon, unsigned char ctrl, unsigned short value, unsigned short maximum, int result);
 
-#endif //DDCCI_INTERNAL_H
+#endif // DDCCONTROL_H

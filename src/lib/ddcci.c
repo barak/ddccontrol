@@ -271,7 +271,8 @@ static int i2c_write(struct monitor* mon, unsigned int addr, unsigned char *buf,
 		struct i2c_rdwr_ioctl_data msg_rdwr;
 		struct i2c_msg             i2cmsg;
 	
-		/* done, prepare message */	
+		memset(&msg_rdwr, 0, sizeof(msg_rdwr));
+		memset(&i2cmsg, 0, sizeof(i2cmsg));
 		msg_rdwr.msgs = &i2cmsg;
 		msg_rdwr.nmsgs = 1;
 	
@@ -361,6 +362,8 @@ static int i2c_read(struct monitor* mon, unsigned int addr, unsigned char *buf, 
 		struct i2c_msg             i2cmsg;
 		int i;
 	
+		memset(&msg_rdwr, 0, sizeof(msg_rdwr));
+		memset(&i2cmsg, 0, sizeof(i2cmsg));
 		msg_rdwr.msgs = &i2cmsg;
 		msg_rdwr.nmsgs = 1;
 	
@@ -558,6 +561,10 @@ static int ddcci_read(struct monitor* mon, unsigned char *buf, unsigned char len
 /* write value to register ctrl of ddc/ci at address addr */
 int ddcci_writectrl(struct monitor* mon, unsigned char ctrl, unsigned short value, int delay)
 {
+	if(mon->__vtable) {
+		return mon->__vtable->writectrl(mon, ctrl, value, delay);
+	}
+
 	unsigned char buf[4];
 
 	buf[0] = DDCCI_COMMAND_WRITE;
@@ -599,6 +606,10 @@ static int ddcci_raw_readctrl(struct monitor* mon,
 int ddcci_readctrl(struct monitor* mon, unsigned char ctrl, 
 	unsigned short *value, unsigned short *maximum)
 {
+	if(mon->__vtable) {
+		return mon->__vtable->readctrl(mon, ctrl, value, maximum);
+	}
+
 	unsigned char buf[8];
 
 	int len = ddcci_raw_readctrl(mon, ctrl, buf, sizeof(buf));
@@ -1059,6 +1070,12 @@ int ddcci_save(struct monitor* mon)
 */
 int ddcci_close(struct monitor* mon)
 {
+	// TODO: closing and freeing are different operations, split the function!
+
+	if(mon->__vtable) {
+		return mon->__vtable->close(mon);
+	}
+
 	if (mon->db)
 	{
 		if (mon->db->init == samsung) {
@@ -1086,6 +1103,8 @@ int ddcci_close(struct monitor* mon)
 			free(mon->caps.vcp[i]);
 		}
 	}
+
+	free(mon->caps.raw_caps);
 	
 	if (mon->profiles) {
 		ddcci_free_profile(mon->profiles);
