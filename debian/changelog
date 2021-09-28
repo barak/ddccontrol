@@ -1,3 +1,9 @@
+ddccontrol (0.4.4-1.3) UNRELEASED; urgency=medium
+
+  * Trim trailing whitespace.
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Tue, 28 Sep 2021 10:46:07 -0000
+
 ddccontrol (0.4.4-1.2) unstable; urgency=medium
 
   * Non-maintainer upload.
@@ -189,4 +195,3 @@ ddccontrol (0.4.2-1) unstable; urgency=low
   * Resolve ITP (closes: #322774)
 
  -- Roberto C. Sanchez <roberto@familiasanchez.net>  Sun, 30 Jul 2006 21:55:49 -0400
-
