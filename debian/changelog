@@ -15,8 +15,9 @@ ddccontrol (0.5.2-1) UNRELEASED; urgency=medium
   * Adjust to move from /usr/lib/*/ddccontrol/ to /usr/libexec/ddccontrol/
   * Install html from installation directory
   * Install systemd-related service files and such
+  * Patch to link libdbusinterface into libddccontrol_dbus_client
 
- -- Barak A. Pearlmutter <bap@debian.org>  Tue, 28 Sep 2021 14:56:03 +0100
+ -- Barak A. Pearlmutter <bap@debian.org>  Tue, 28 Sep 2021 15:27:06 +0100
 
 ddccontrol (0.4.4-1.2) unstable; urgency=medium
 

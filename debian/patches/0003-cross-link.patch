@@ -1,0 +1,23 @@
+From: "Barak A. Pearlmutter" <barak+git@pearlmutter.net>
+Date: Tue, 28 Sep 2021 15:23:01 +0100
+Subject: cross link
+
+The libddccontrol_dbus_client.so needs to link to libddccontrol.so in
+order to have ddcci_parse_caps, ddcci_create_db, etc
+---
+ src/daemon/Makefile.am | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/daemon/Makefile.am b/src/daemon/Makefile.am
+index 56f0d41..19372ab 100644
+--- a/src/daemon/Makefile.am
++++ b/src/daemon/Makefile.am
+@@ -19,7 +19,7 @@ lib_LTLIBRARIES = libddccontrol_dbus_client.la
+ 
+ libddccontrol_dbus_client_la_SOURCES = dbus_client.c
+ libddccontrol_dbus_client_la_LDFLAGS = $(LIBXML2_LDFLAGS)
+-libddccontrol_dbus_client_la_LIBADD   = libdbusinterface.la
++libddccontrol_dbus_client_la_LIBADD   = libdbusinterface.la ../lib/libddccontrol.la
+ 
+ # interface library
+ noinst_LTLIBRARIES = libdbusinterface.la

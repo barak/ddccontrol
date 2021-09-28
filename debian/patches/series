@@ -1,2 +1,3 @@
 0001-use-pkexec-for-gddccontrol.patch
 0002-load-i2c-dev-module-at-boot.patch
+0003-cross-link.patch
