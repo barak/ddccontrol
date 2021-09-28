@@ -1,9 +1,9 @@
 Source: ddccontrol
 Section: utils
 Priority: optional
-Maintainer: Miroslav Kravec <kravec.miroslav@gmail.com>
+Maintainer: Barak A. Pearlmutter <bap@debian.org>
 Homepage: https://github.com/ddccontrol/ddccontrol
-Build-Depends: debhelper-compat (= 11),
+Build-Depends: debhelper-compat (= 13),
  libpci-dev,
  intltool,
  libxml2-dev,
@@ -14,7 +14,8 @@ Build-Depends: debhelper-compat (= 11),
  tidy,
  zlib1g-dev,
  docbook-xsl
-Standards-Version: 4.1.5
+Standards-Version: 4.6.0
+Rules-Requires-Root: no
 Vcs-Git: https://github.com/ddccontrol/debian-ddccontrol.git
 Vcs-Browser: https://github.com/ddccontrol/debian-ddccontrol
 
