@@ -1,0 +1,11 @@
+/*.debhelper
+/*.debhelper.log
+/*.substvars
+/.debhelper/
+/ddccontrol/
+/debhelper-build-stamp
+/files
+/gddccontrol/
+/libddccontrol-dev/
+/libddccontrol0/
+/tmp/
