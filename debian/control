@@ -16,8 +16,8 @@ Build-Depends: debhelper-compat (= 13),
  docbook-xsl
 Standards-Version: 4.6.0
 Rules-Requires-Root: no
-Vcs-Git: https://github.com/ddccontrol/debian-ddccontrol.git
-Vcs-Browser: https://github.com/ddccontrol/debian-ddccontrol
+Vcs-Git: https://salsa.debian.org/debian/ddccontrol.git
+Vcs-Browser: https://salsa.debian.org/debian/ddccontrol
 
 Package: gddccontrol
 Architecture: i386 amd64 ia64 alpha arm armel armhf

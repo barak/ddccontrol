@@ -1,4 +1,4 @@
-ddccontrol (0.5.2-1) UNRELEASED; urgency=medium
+ddccontrol (0.5.2-1) unstable; urgency=medium
 
   * Include .pc file in -dev package
   * Trim trailing whitespace.
@@ -17,8 +17,9 @@ ddccontrol (0.5.2-1) UNRELEASED; urgency=medium
   * Install systemd-related service files and such
   * Patch to link libdbusinterface into libddccontrol_dbus_client
   * Add attribution line to debian/README.Debian
+  * Swizzle packaging repo to salsa
 
- -- Barak A. Pearlmutter <bap@debian.org>  Tue, 28 Sep 2021 15:27:06 +0100
+ -- Barak A. Pearlmutter <bap@debian.org>  Thu, 30 Sep 2021 13:37:31 +0100
 
 ddccontrol (0.4.4-1.2) unstable; urgency=medium
 
