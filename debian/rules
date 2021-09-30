@@ -2,9 +2,6 @@
 
 export DEB_BUILD_MAINT_OPTIONS=hardening=+bindnow
 
-LDFLAGS+=-Wl,--as-needed
-export LIBS=-lm
-
 %:
 	dh $@
 
