@@ -22,7 +22,6 @@ Vcs-Browser: https://salsa.debian.org/debian/ddccontrol
 Package: gddccontrol
 Architecture: i386 amd64 ia64 alpha arm armel armhf
 Depends: ddccontrol (= ${binary:Version}),
- policykit-1,
  ${shlibs:Depends},
  ${dist:Depends},
  ${misc:Depends}
