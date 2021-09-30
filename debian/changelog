@@ -1,9 +1,13 @@
-ddccontrol (0.5.2-2) UNRELEASED; urgency=medium
+ddccontrol (0.5.2-2) unstable; urgency=medium
 
-  * Run gddccontrol as regular user, since it uses dbus and the GUI client
-    works fine under Wayland (closes: #931145)
+  * The new upstream release (closes: #988113) fixes a bunch of issues
+    - Can run GUI client gddccontrol as regular user, since the system now
+      uses dbus (closes: #931145)
+    - autotools fixes (closes: #995038)
+    - 𝐬𝐭𝐚𝐭𝐢𝐜 inline int readbytes (closes: #757268)
+  * Patch autoconf: xml2-config to pkg-config (closes: #949090)
 
- -- Barak A. Pearlmutter <bap@debian.org>  Thu, 30 Sep 2021 15:32:07 +0100
+ -- Barak A. Pearlmutter <bap@debian.org>  Thu, 30 Sep 2021 15:57:53 +0100
 
 ddccontrol (0.5.2-1) unstable; urgency=medium
 
