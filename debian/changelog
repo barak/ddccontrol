@@ -1,9 +1,10 @@
-ddccontrol (0.5.2-3) UNRELEASED; urgency=medium
+ddccontrol (0.5.3-1) unstable; urgency=medium
 
   * autoupdate patch
   * l10n patch, German (closes: #586775)
+  * Forward port patches, which have been largely upstreamed
 
- -- Barak A. Pearlmutter <bap@debian.org>  Fri, 01 Oct 2021 09:46:55 +0100
+ -- Barak A. Pearlmutter <bap@debian.org>  Fri, 01 Oct 2021 09:57:31 +0100
 
 ddccontrol (0.5.2-2) unstable; urgency=medium
 
