@@ -1,8 +1,9 @@
 ddccontrol (0.5.2-3) UNRELEASED; urgency=medium
 
   * autoupdate patch
+  * l10n patch, German (closes: #586775)
 
- -- Barak A. Pearlmutter <bap@debian.org>  Thu, 30 Sep 2021 22:26:22 +0100
+ -- Barak A. Pearlmutter <bap@debian.org>  Fri, 01 Oct 2021 09:46:55 +0100
 
 ddccontrol (0.5.2-2) unstable; urgency=medium
 
