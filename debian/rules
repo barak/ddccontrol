@@ -5,9 +5,6 @@ export DEB_BUILD_MAINT_OPTIONS=hardening=+bindnow
 %:
 	dh $@
 
-override_dh_autoreconf:
-	./autogen.sh
-
 export systemdsystemunitdir:=$(shell pkg-config systemd --variable=systemdsystemunitdir)
 
 override_dh_auto_configure:
@@ -17,16 +14,12 @@ override_dh_auto_configure:
 
 override_dh_auto_test:
 
-override_dh_install:
-	dh_install -plibddccontrol-dev
-	# Strip wrong #include "config.h" from ddcci.h (bug#518083)
-	cd debian/libddccontrol-dev/usr/include/ddccontrol/ && \
-		grep -v '#include "config.h"' ddcci.h > ddcci.h.new && \
-		mv ddcci.h.new ddcci.h
-	dh_install --remaining-packages
+execute_after_dh_install:
+	@echo 'Strip wrong #include "config.h" from ddcci.h (bug#518083)'
+	sed --in-place 's:[#]include "config.h"::' \
+	 debian/libddccontrol-dev/usr/include/ddccontrol/ddcci.h
 
-override_dh_clean:
+execute_before_dh_clean:
 	rm -f src/gnome-ddcc-applet/Makefile
 	rm -f doc/Makefile
 	rm -f src/gddccontrol/gddccontrol.desktop
-	dh_clean
