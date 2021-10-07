@@ -1,3 +1,9 @@
+ddccontrol (0.6.0-4) unstable; urgency=medium
+
+  * build require systemd for systemd.pc for pkg-config
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Thu, 07 Oct 2021 13:55:38 +0100
+
 ddccontrol (0.6.0-3) unstable; urgency=medium
 
   * gddccontrol enhances ddccontrol

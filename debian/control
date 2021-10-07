@@ -13,6 +13,7 @@ Build-Depends: debhelper-compat (= 13),
  xsltproc,
  tidy,
  zlib1g-dev,
+ systemd,
  docbook-xsl
 Standards-Version: 4.6.0
 Rules-Requires-Root: no
