@@ -25,6 +25,7 @@ Depends: ddccontrol (= ${binary:Version}),
  ${shlibs:Depends},
  ${dist:Depends},
  ${misc:Depends}
+Enhances: ddccontrol
 Description: program to control monitor parameters (graphical interface)
  DDCcontrol is a tool used to control monitor parameters, like brightness
  and contrast, without using the OSD (On Screen Display) and the buttons
