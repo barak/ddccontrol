@@ -18,8 +18,3 @@ execute_after_dh_install:
 	@echo 'Strip wrong #include "config.h" from ddcci.h (bug#518083)'
 	sed --in-place 's:[#]include "config.h"::' \
 	 debian/libddccontrol-dev/usr/include/ddccontrol/ddcci.h
-
-execute_before_dh_clean:
-	rm -f src/gnome-ddcc-applet/Makefile
-	rm -f doc/Makefile
-	rm -f src/gddccontrol/gddccontrol.desktop

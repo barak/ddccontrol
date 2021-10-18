@@ -1,3 +1,9 @@
+ddccontrol (0.6.0-5) unstable; urgency=medium
+
+  * migrate cleaning out of debian/rules
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Mon, 18 Oct 2021 09:35:48 +0100
+
 ddccontrol (0.6.0-4) unstable; urgency=medium
 
   * build require systemd for systemd.pc for pkg-config
