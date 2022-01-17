@@ -1,2 +1,2 @@
 version=4
-opts=filenamemangle=s%(?:.*?)?v?(\d[\d.]*)\.tar\.gz%ddccontrol-$1.tar.gz% https://github.com/ddccontrol/ddccontrol/releases (?:.*?/)?v?(\d[\d.]*)\.tar\.gz debian uupdate
+https://github.com/@PACKAGE@/@PACKAGE@/releases .*/v?@ANY_VERSION@@ARCHIVE_EXT@

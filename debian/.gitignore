@@ -2,6 +2,8 @@
 /*.debhelper.log
 /*.substvars
 /.debhelper/
+/autoreconf.after
+/autoreconf.before
 /ddccontrol/
 /debhelper-build-stamp
 /files
