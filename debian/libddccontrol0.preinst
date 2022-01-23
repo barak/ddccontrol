@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+
+# This goes in preinst, postinst, and postrm:
+dpkg-maintscript-helper rm_conffile \
+ /etc/modules-load.d/ddccontrol-i2c-dev.conf 0.6.0-8~ libddccontrol0 -- "$@"
+
+#DEBHELPER#

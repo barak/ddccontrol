@@ -1,3 +1,9 @@
+ddccontrol (0.6.0-8) unstable; urgency=medium
+
+  * Use dpkg-maintscript-helper(1) for old conffile (closes: #1004227)
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Sun, 23 Jan 2022 11:33:43 +0000
+
 ddccontrol (0.6.0-7) unstable; urgency=medium
 
   * oops, need to actually swizzle module dir in packaging scripts
