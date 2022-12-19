@@ -1,3 +1,9 @@
+ddccontrol (0.6.0-9) UNRELEASED; urgency=medium
+
+  * Swizzle debian/watch to tags in upstream repo
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Mon, 19 Dec 2022 19:56:59 +0000
+
 ddccontrol (0.6.0-8) unstable; urgency=medium
 
   * Use dpkg-maintscript-helper(1) for old conffile (closes: #1004227)
