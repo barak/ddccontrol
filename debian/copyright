@@ -1,6 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Source: http://ddccontrol.sourceforge.net/
         https://github.com/ddccontrol/ddccontrol
+Upstream-Name: ddccontrol
 
 Files: *
 Copyright: 2004-2022 Oleg I. Vdovikin <oleg@cs.msu.su>,

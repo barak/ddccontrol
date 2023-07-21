@@ -15,7 +15,7 @@ Build-Depends: debhelper-compat (= 13),
  zlib1g-dev,
  systemd,
  docbook-xsl
-Standards-Version: 4.6.1
+Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Vcs-Git: https://salsa.debian.org/debian/ddccontrol.git
 Vcs-Browser: https://salsa.debian.org/debian/ddccontrol

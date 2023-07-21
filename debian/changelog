@@ -1,3 +1,14 @@
+ddccontrol (0.6.2-1) unstable; urgency=medium
+
+  * New upstream version
+  * Set upstream metadata fields: Archive, Name, Repository, Repository-Browse.
+  * Update standards version to 4.6.2, no changes needed.
+  * Set field Upstream-Name in debian/copyright.
+  * Remove obsolete field Name from debian/upstream/metadata (already present in
+    machine-readable debian/copyright).
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Fri, 21 Jul 2023 17:46:14 +0200
+
 ddccontrol (0.6.1-1) unstable; urgency=medium
 
   * Swizzle debian/watch to tags in upstream repo
