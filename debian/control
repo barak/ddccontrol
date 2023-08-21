@@ -35,7 +35,7 @@ Description: program to control monitor parameters (graphical interface)
  This package provides a graphical user interface.
 
 Package: ddccontrol
-Architecture: i386 amd64 ia64 alpha arm armel armhf
+Architecture: i386 amd64 ia64 alpha arm armel armhf loong64
 Depends: ddccontrol-db,
  ${shlibs:Depends},
  ${misc:Depends}
@@ -46,7 +46,7 @@ Description: program to control monitor parameters
 
 Package: libddccontrol-dev
 Section: libdevel
-Architecture: i386 amd64 ia64 alpha arm armel armhf
+Architecture: i386 amd64 ia64 alpha arm armel armhf loong64
 Multi-Arch: same
 Pre-Depends: ${misc:Pre-Depends}
 Depends: libddccontrol0 (= ${binary:Version}),
@@ -60,7 +60,7 @@ Description: development files for ddccontrol
 
 Package: libddccontrol0
 Section: libs
-Architecture: i386 amd64 ia64 alpha arm armel armhf
+Architecture: i386 amd64 ia64 alpha arm armel armhf loong64
 Multi-Arch: same
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${shlibs:Depends},
