@@ -1,3 +1,9 @@
+ddccontrol (0.6.3-2) unstable; urgency=medium
+
+  * Add loong64 to architectures list (closes: #1050068)
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Wed, 06 Sep 2023 16:42:04 +0100
+
 ddccontrol (0.6.3-1) unstable; urgency=medium
 
   * New upstream version
