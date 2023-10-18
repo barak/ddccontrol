@@ -3,6 +3,8 @@ ddccontrol (1.0.0-1) unstable; urgency=medium
   * New upstream release
   * Adjust dbus support file installation location
   * Update debian/copyright per lintian
+  * Swizzle dpkg-maintscript in libddccontrol0.{pre/post}{inst,rm}
+    to libddccontrol0.maintscript per lintian
 
  -- Barak A. Pearlmutter <bap@debian.org>  Wed, 18 Oct 2023 08:41:39 +0100
 
