@@ -24,7 +24,6 @@ Package: gddccontrol
 Architecture: i386 amd64 ia64 alpha arm armel armhf loong64
 Depends: ddccontrol (= ${binary:Version}),
  ${shlibs:Depends},
- ${dist:Depends},
  ${misc:Depends}
 Enhances: ddccontrol
 Description: program to control monitor parameters (graphical interface)
