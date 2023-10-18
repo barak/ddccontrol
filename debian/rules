@@ -14,7 +14,7 @@ override_dh_auto_configure:
 	 --with-systemdsystemunitdir=$(systemdsystemunitdir)
 
 override_dh_auto_install:
-	dh_auto_install -- modulesdir=$(modulesdir)
+	dh_auto_install -- modulesdir=$(modulesdir) dbusconfdir=/usr/share/dbus-1/system.d
 
 override_dh_auto_test:
 

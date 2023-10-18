@@ -5,6 +5,6 @@ usr/share/man/man1/ddccontrol.1
 usr/share/dbus-1/interfaces/*.xml
 usr/share/dbus-1/system-services/*.service
 ${env:systemdsystemunitdir}/*.service
-etc/dbus-1/system.d/*.conf
+usr/share/dbus-1/system.d/*.conf
 
 usr/share/doc/ddccontrol/*.html usr/share/doc/ddccontrol/html/

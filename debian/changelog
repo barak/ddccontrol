@@ -1,6 +1,7 @@
 ddccontrol (1.0.0-1) unstable; urgency=medium
 
   * New upstream release
+  * Adjust dbus support file installation location
 
  -- Barak A. Pearlmutter <bap@debian.org>  Wed, 18 Oct 2023 08:41:39 +0100
 
