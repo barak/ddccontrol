@@ -4,7 +4,7 @@ Source: http://ddccontrol.sourceforge.net/
 Upstream-Name: ddccontrol
 
 Files: *
-Copyright: 2004-2022 Oleg I. Vdovikin <oleg@cs.msu.su>,
+Copyright: 2004-2023 Oleg I. Vdovikin <oleg@cs.msu.su>,
            Nicolas Boichat <nicolas@boichat.ch>,
            Christian Schilling <cschilling@gmx.de>,
            Roberto C. Sanchez <roberto@connexer.com>, and
@@ -12,7 +12,7 @@ Copyright: 2004-2022 Oleg I. Vdovikin <oleg@cs.msu.su>,
 License: GPL-2+
 
 Files: debian/*
-Copyright: 2006-2022, Roberto C. Sanchez <roberto@connexer.com>,
+Copyright: 2006-2023, Roberto C. Sanchez <roberto@connexer.com>,
            Miroslav Kravec <kravec.miroslav@gmail.com>, and
            Barak A. Pearlmutter <bap@debian.org>
 License: GPL-2+
