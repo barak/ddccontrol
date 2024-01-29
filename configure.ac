@@ -1,4 +1,4 @@
-AC_INIT([DDC/CI control tool],[0.6.0],[DDCControl users list <ddccontrol-users@lists.sourceforge.net>],[ddccontrol])
+AC_INIT([DDC/CI control tool],[1.0.0],[DDCControl users list <ddccontrol-users@lists.sourceforge.net>],[ddccontrol])
 AC_CONFIG_SRCDIR([src/ddccontrol/main.c])
 AC_CONFIG_HEADERS([src/config.h])
 AC_CONFIG_MACRO_DIR([m4])
@@ -165,7 +165,7 @@ if test x$support_gnome = xyes; then
    echo -n "checking for gtk+>=2.4 and gthread>=2.4... "
    if $PKG_CONFIG --atleast-version=2.4 gtk+-2.0 gthread-2.0 ; then
       GNOME_LDFLAGS="$LIBXML2_LIBS `$PKG_CONFIG --libs gtk+-2.0 gthread-2.0`"
-      GNOME_CFLAGS="$LIBXML2_CFLAGS `$PKG_CONFIG --cflags gtk+-2.0 gthread-2.0`"
+      GNOME_CFLAGS="$LIBXML2_CFLAGS `$PKG_CONFIG --cflags gtk+-2.0 gthread-2.0` -DGTK_DISABLE_SINGLE_INCLUDES -DGDK_DISABLE_DEPRECATED -DGTK_DISABLE_DEPRECATED -DGSEAL_ENABLE"
       GDDCCONTROL=gddccontrol
       echo "yes"
 
