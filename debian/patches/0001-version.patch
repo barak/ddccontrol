@@ -7,12 +7,12 @@ Subject: version
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/configure.ac b/configure.ac
-index 2d8fa68..b9c2f10 100644
+index 2d8fa68..232e553 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -1,4 +1,4 @@
 -AC_INIT([DDC/CI control tool],[1.0.0],[DDCControl users list <ddccontrol-users@lists.sourceforge.net>],[ddccontrol])
-+AC_INIT([DDC/CI control tool],[1.0.1],[DDCControl users list <ddccontrol-users@lists.sourceforge.net>],[ddccontrol])
++AC_INIT([DDC/CI control tool],[1.0.2],[DDCControl users list <ddccontrol-users@lists.sourceforge.net>],[ddccontrol])
  AC_CONFIG_SRCDIR([src/ddccontrol/main.c])
  AC_CONFIG_HEADERS([src/config.h])
  AC_CONFIG_MACRO_DIR([m4])
