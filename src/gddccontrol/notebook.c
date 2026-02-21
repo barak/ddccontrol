@@ -731,11 +731,9 @@ void delete_monitor_manager()
 			ddcci_save(mon);
 	
 		free(mon);
-		g_slist_free(all_controls);
 	}
 	
-	if (profile_manager) {
-		gtk_widget_destroy(profile_manager);
-		profile_manager = NULL;
+	if (all_controls) {
+		g_slist_free(all_controls);
 	}
 }
