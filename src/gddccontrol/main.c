@@ -1,5 +1,6 @@
 /***************************************************************************
  *   Copyright (C) 2004-2005 by Nicolas Boichat                            *
+ *   Copyright (C) 2004-2026 by DDCcontrol authors and contributors        *
  *   nicolas@boichat.ch                                                    *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -22,9 +23,9 @@
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
-
-#define IDLE_TIMEOUT 60
 
 #include "gui.h"
 #include "internal.h"
@@ -95,6 +96,16 @@ static gboolean parse_verbosity_option(const gchar *option_name, const gchar *va
 	verbosity++;
 
 	return TRUE;
+}
+
+static int can_use_dbus_daemon(void)
+{
+	const char *disable_envvar = getenv("DDCCONTROL_NO_DAEMON");
+
+	if (disable_envvar != NULL && strlen(disable_envvar) > 0)
+		return 0;
+
+	return 1;
 }
 
 static gboolean delete_event( GtkWidget *widget,
@@ -313,12 +324,6 @@ void set_message_ok(char* message, int with_ok)
 		gtk_main_iteration();
 }
 
-static gboolean heartbeat(gpointer data)
-{
-	ddcpci_send_heartbeat();
-	return G_SOURCE_CONTINUE;
-}
-
 /* Create a new button with an image and a label packed into it
  * and return the button. */
 GtkWidget *button_from_icon_name(const gchar * icon_name, const gchar *label_text, const gchar *tool_tip)
@@ -370,7 +375,13 @@ static void probe_monitors(GtkWidget *widget, gpointer data) {
 	
 	set_message(_("Probing for available monitors..."));
 	// TODO: rescan on button, initial get only
-	monlist = ddcci_dbus_rescan_monitors(ddccontrol_proxy);
+	ddcci_free_list(monlist);
+	monlist = NULL;
+
+	if (can_use_dbus_daemon())
+		monlist = ddcci_dbus_rescan_monitors(ddccontrol_proxy);
+	else
+		monlist = ddcci_probe();
 
 	const struct monitorlist* current;
 	
@@ -447,9 +458,15 @@ int main( int argc, char *argv[] )
 
 	ddcci_verbosity(verbosity);
 
-	ddccontrol_proxy = ddcci_dbus_open_proxy();
-	if(ddccontrol_proxy == NULL)
-		return 1;
+	if (can_use_dbus_daemon()) {
+		ddccontrol_proxy = ddcci_dbus_open_proxy();
+		if(ddccontrol_proxy == NULL) {
+			printf(_("Failed to open D-Bus proxy, try with DDCCONTROL_NO_DAEMON=1.\n"));
+			return 1;
+		}
+	} else {
+		ddccontrol_proxy = NULL;
+	}
 
 	g_mutex_init(&combo_change_mutex);
 	
@@ -471,8 +488,6 @@ int main( int argc, char *argv[] )
 		return 1;
 	}
 	
-	g_timeout_add( IDLE_TIMEOUT*1000, heartbeat, NULL );
-	
 	gtk_window_set_default_icon_name ("gddccontrol");
 
 	main_app_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -493,7 +508,10 @@ int main( int argc, char *argv[] )
 				G_CALLBACK (window_changed), NULL);
 	
 	gtk_container_set_border_width (GTK_CONTAINER (main_app_window), 4);
-	
+
+	GtkAccelGroup *accel_group = gtk_accel_group_new();
+	gtk_window_add_accel_group(GTK_WINDOW(main_app_window), accel_group);
+
 	grid = gtk_grid_new();
 	gtk_widget_show (grid);
 	int crow = 0; /* Current row */
@@ -513,6 +531,8 @@ int main( int argc, char *argv[] )
 
 	refresh_monitors_button = button_from_icon_name("view-refresh", NULL, _("Refresh monitor list"));
 	g_signal_connect(G_OBJECT(refresh_monitors_button), "clicked", G_CALLBACK(probe_monitors), NULL);
+	gtk_widget_add_accelerator(refresh_monitors_button, "clicked", accel_group, GDK_KEY_F5, 0, GTK_ACCEL_VISIBLE);
+	g_object_unref(accel_group);
 	gtk_widget_show(refresh_monitors_button);
 	gtk_box_pack_start(GTK_BOX(choice_hbox),refresh_monitors_button, 0, 0, 0);
 	

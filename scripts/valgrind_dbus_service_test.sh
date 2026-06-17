@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 # Copyright(c) 2018 Miroslav Kravec (kravec.miroslav@gmail.com)
+# Copyright(c) 2004-2026 DDCcontrol authors and contributors (see AUTHORS and CONTRIBUTORS)
 # SPDX-License-Identifier: GPL-2.0
 
 source "$(dirname "$0")/common_test.sh"
@@ -8,9 +9,8 @@ source "$(dirname "$0")/common_test.sh"
 VALGRIND_OUT=$(mktemp /tmp/ddccontrol_service.valgrind.out.XXXXXXXX)
 chmod 755 "${VALGRIND_OUT}"
 
-echo "kill all ddccontrol & ddcpci processes"
+echo "kill all ddccontrol processes"
 pkill ddccontrol
-pkill ddcpci
 
 sleep 0.25
 

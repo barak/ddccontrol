@@ -1,4 +1,4 @@
-AC_INIT([DDC/CI control tool],[1.0.3],[https://github.com/ddccontrol/ddccontrol/issues],[ddccontrol])
+AC_INIT([DDC/CI control tool],[3.0.0],[https://github.com/ddccontrol/ddccontrol/issues],[ddccontrol]) dnl x-release-please-version
 AC_CONFIG_SRCDIR([src/ddccontrol/main.c])
 AC_CONFIG_HEADERS([src/config.h])
 AC_CONFIG_MACRO_DIR([m4])
@@ -6,7 +6,7 @@ AM_INIT_AUTOMAKE([subdir-objects -Wall foreign])
 
 IT_PROG_INTLTOOL
 AM_GNU_GETTEXT([external])
-AM_GNU_GETTEXT_VERSION([0.18.1])
+AM_GNU_GETTEXT_VERSION([0.21])
 GETTEXT_PACKAGE=ddccontrol
 AC_SUBST([GETTEXT_PACKAGE])
 
@@ -48,12 +48,12 @@ if test "x$support_i2c_dev" = "xyes" ; then
 
 	support_i2c_dev_works=no
 	AC_MSG_CHECKING([if linux/i2c-dev.h works with non-kernel linux/types.h])
-	AC_COMPILE_IFELSE([
-	[#include <linux/types.h>]
-	[#include <linux/i2c-dev.h>]
-	[const int a = I2C_RDWR + I2C_M_RD;]
-	[struct i2c_msg i2cmsg;]
-	],
+	AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+	#include <linux/types.h>
+	#include <linux/i2c-dev.h>
+	const int a = I2C_RDWR + I2C_M_RD;
+	struct i2c_msg i2cmsg;
+	]])],
 	support_i2c_dev_works=yes
 	AC_MSG_RESULT(yes),
 	AC_MSG_RESULT(no)
@@ -61,12 +61,12 @@ if test "x$support_i2c_dev" = "xyes" ; then
 
 	if test "x$support_i2c_dev_works" = "xno" ; then
 	  AC_MSG_CHECKING([if $srcdir/src/lib/i2c-dev.h works instead])
-	  AC_COMPILE_IFELSE([
-	  [#define HAVE_BUGGY_I2C_DEV 1]
-	  [#include "$srcdir/src/lib/i2c-dev.h"]
-	  [const int a = I2C_RDWR + I2C_M_RD;]
-	  [struct i2c_msg i2cmsg;]
-	  ],
+	  AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+	  #define HAVE_BUGGY_I2C_DEV 1
+	  #include "$srcdir/src/lib/i2c-dev.h"
+	  const int a = I2C_RDWR + I2C_M_RD;
+	  struct i2c_msg i2cmsg;
+	  ]])],
 	  AC_DEFINE(HAVE_BUGGY_I2C_DEV, 1, [Define if linux/i2c-dev.h is buggy on your system, so defaults constants and structures must be used])
 	  support_i2c_dev_works=yes
 	  AC_MSG_RESULT(yes),
@@ -89,66 +89,6 @@ AC_SEARCH_LIBS([round],[m])
 
 # libxml2 check
 PKG_CHECK_MODULES([LIBXML2], [libxml-2.0])
-
-# Deprecated direct PCI memory access check
-support_ddcpci=no
-AC_ARG_ENABLE(legacy-pci,
-  [AS_HELP_STRING([--enable-legacy-pci],[enable deprecated legacy direct PCI memory access (disabled)])],
-  [if test x$enableval = xyes; then
-    support_ddcpci=yes
-  fi])
-AC_ARG_ENABLE(ddcpci,
-  [AS_HELP_STRING([--enable-ddcpci],[alias for --enable-legacy-pci])],
-  [if test x$enableval = xyes; then
-    support_ddcpci=yes
-  fi])
-
-DDCPCI=
-if test x$support_ddcpci = xyes; then
-   AC_MSG_WARN([Legacy direct PCI DDC/CI access is deprecated and will be removed in a future release. Use /dev/i2c-* instead.])
-   AC_CHECK_HEADERS([pci/pci.h], [], [AC_MSG_ERROR([PCI utils headers not found, please install pci-utils.], [1])], [])
-   AC_CHECK_LIB([pci], [pci_alloc], [], [
-      AC_CHECK_LIB([z], [gzopen], [], [AC_MSG_ERROR([PCI utils library not found, please install pci-utils.], [1])])
-      AC_CHECK_LIB([pci], [pci_fill_info], [], [AC_MSG_ERROR([PCI utils library not found, please install pci-utils.], [1])], [-lz])
-   ])
-   DDCPCI=ddcpci
-   AC_DEFINE_UNQUOTED(HAVE_DDCPCI, 1, [Define if ddccontrol is built with ddcpci support.])
-fi
-
-AC_SUBST([DDCPCI])
-
-AC_CHECK_HEADERS([sys/io.h])
-AM_CONDITIONAL(HAVE_SYS_IO, [test x$ac_cv_header_sys_io_h = xyes])
-
-# Deprecated AMD ADL support check
-support_amdadl=no
-AC_ARG_ENABLE(amd-adl,
-  [AS_HELP_STRING([--enable-amd-adl],[enable deprecated AMD Display Library support (disabled)])],
-  [if test x$enableval = xyes; then
-    support_amdadl=yes
-  fi])
-AC_ARG_ENABLE(amdadl,
-  [AS_HELP_STRING([--enable-amdadl],[alias for --enable-amd-adl])],
-  [if test x$enableval = xyes; then
-    support_amdadl=yes
-  fi])
-
-AMDADL=
-if test x$support_amdadl = xyes; then
-   AC_MSG_WARN([AMD ADL support is deprecated and will be removed in a future release. Use /dev/i2c-* instead.])
-   AC_CHECK_HEADERS([ADL/adl_sdk.h], [], [AC_MSG_ERROR([ADL headers not found, but ADL support requested.], [1])],
-   [#ifndef __stdcall
-    #define __stdcall
-    #endif
-    ])
-   AMDADL=amdadl
-fi
-
-if test x$AMDADL = xamdadl; then
-   AC_DEFINE_UNQUOTED(HAVE_AMDADL, 1, [Define if ddccontrol is built with ADL support.])
-fi
-
-AC_SUBST([AMDADL])
 
 # Gnome check
 support_gnome=yes
@@ -269,6 +209,7 @@ AM_CONDITIONAL(HAVE_SYSTEMD, [test -n "$systemdsystemunitdir"])
 AC_CONFIG_FILES([
 	po/Makefile.in
 	Makefile
+	data/Makefile
 	src/Makefile
 	src/lib/Makefile
 	src/lib/ddccontrol.pc
@@ -276,7 +217,6 @@ AC_CONFIG_FILES([
 	src/daemon/data/Makefile
 	src/ddccontrol/Makefile
 	src/gddccontrol/Makefile
-	src/ddcpci/Makefile
 	doc/Makefile
 	doc/main.xml
 	man/Makefile])

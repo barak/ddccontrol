@@ -13,6 +13,12 @@ DDCcontrol consists of:
 * `ddccontrol` - command-line tool for monitor parameters control
 * `gddccontrol` - GUI tool for monitor parameters control
 
+DDCcontrol communicates with monitors from userspace through the Linux
+`i2c-dev` interface (`/dev/i2c-*`). AMD ADL and legacy direct PCI backends have
+been removed. For directly connected displays, this uses the same kernel
+userspace I2C path as `ddcutil`; USB-connected DDC/CI displays are not supported
+yet.
+
 ## Installation
 
 The most convenient way to install DDCcontrol is to use packages from official distribution repositories.
@@ -25,7 +31,7 @@ DDCcontrol tools, `ddccontrol` and `gddccontrol` can be installed from official 
 
 * on Ubuntu/Debian: `sudo apt install ddccontrol gddccontrol ddccontrol-db i2c-tools`
 * on Fedora: `sudo dnf install ddccontrol ddccontrol-gtk`
-* on openSUSE: `sudo zypper in ddccontrol`
+* on openSUSE: `sudo zypper in ddccontrol i2c-tools`
 
 You might need to restart your system after installing `i2c-tools`.
 
@@ -36,14 +42,9 @@ Install build dependencies:
 * on Ubuntu: `sudo apt install intltool i2c-tools libxml2-dev libgtk3.0-dev liblzma-dev`
 * on Solus: `sudo eopkg install -c system.devel`  
   `sudo eopkg install autoconf automake intltool i2c-tools m4 diffutils libtool-devel xz-devel libxml2-devel libgtk-3-devel`
-* on others: `TODO`
-
-Deprecated AMD ADL and legacy direct PCI backends are disabled by default.
-Use `/dev/i2c-N` devices through `i2c-dev` instead. Builds that explicitly
-enable the deprecated AMD ADL backend with `--enable-amd-adl` or the
-deprecated legacy PCI backend with `--enable-legacy-pci` still require their
-extra development packages. For legacy PCI, that means the pciutils development
-package, for example `libpci-dev` on Ubuntu or `pciutils-devel` on Solus.
+* on others: install autotools, intltool, i2c-tools, libxml2 development files,
+  GTK 3 development files and xz/lzma development files using your
+  distribution's package manager.
 
 Clone, build and install built version:
 
@@ -70,7 +71,10 @@ It often merely involves adapting a few standard capabilities as many [pull requ
 
 `gddccontrol` is a graphical utility for monitor configuration. It is called **Monitor Settings** in list of applications.
 
-Following configuration is needed to allow non-root user to use `gddccontrol`:
+DDCcontrol needs readable and writable `/dev/i2c-*` devices. Most
+distributions provide this through the `i2c-dev` kernel module and an `i2c`
+group. Following configuration is needed to allow a non-root user to use
+`gddccontrol`:
 
 ```shell
 sudo adduser $USER i2c
@@ -81,6 +85,20 @@ Utility can launched directly from commandline:
 
 ```shell
 sudo gddccontrol
+```
+
+`gddccontrol` uses standard GTK3 widgets and follows the configured GTK theme.
+To try the GTK high-contrast dark theme for one launch, run:
+
+```shell
+GTK_THEME=HighContrastInverse gddccontrol
+```
+
+If you need to run `gddccontrol` through `sudo`, preserve the theme override
+with `env`:
+
+```shell
+sudo env GTK_THEME=HighContrastInverse gddccontrol
 ```
 
 For GNOME Shell top-bar menu control, see the example extension in
@@ -110,6 +128,36 @@ sudo ddccontrol -r 0x10 -w 75 -s dev:/dev/i2c-4
 ```
 
 See `ddccontrol -h` for more information.
+
+## Troubleshooting
+
+### NVIDIA proprietary driver — I2C/DDC not working over DisplayPort or HDMI
+
+The NVIDIA proprietary driver sometimes fails to expose `/dev/i2c-*` devices for
+DDC/CI communication, causing `ddccontrol -p` to find no monitors (or to return
+I2C errors) when connected via DisplayPort or HDMI.
+
+The fix is to add an Xorg configuration snippet that enables software I2C in the
+NVIDIA driver.  A ready-made configuration file is shipped with DDCcontrol at
+`$(datadir)/ddccontrol/90-nvidia-i2c.conf` (typically
+`/usr/share/ddccontrol/90-nvidia-i2c.conf` after installation).  Copy it into
+place and restart your X session:
+
+```shell
+sudo cp /usr/share/ddccontrol/90-nvidia-i2c.conf /etc/X11/xorg.conf.d/
+```
+
+If you built from source without installing, you can copy the file directly from
+the source tree:
+
+```shell
+sudo cp data/90-nvidia-i2c.conf /etc/X11/xorg.conf.d/
+```
+
+After restarting X, `ddccontrol -p` should detect your monitors normally.
+
+See the [NVIDIA developer forum thread](https://forums.developer.nvidia.com/t/gddccontrol-issues-with-nvidia-drivers-i2c-monitor-display-ddc-dp-hdmi-failing/30427)
+for background on this issue.
 
 ## License
 

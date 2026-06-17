@@ -2,6 +2,7 @@
     ddc/ci interface functions header
     Copyright(c) 2004 Oleg I. Vdovikin (oleg@cs.msu.su)
     Copyright(c) 2004-2005 Nicolas Boichat (nicolas@boichat.ch)
+    Copyright(c) 2004-2026 DDCcontrol authors and contributors (see AUTHORS and CONTRIBUTORS)
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -58,7 +59,6 @@ struct monitor {
 
 	int fd;
 	unsigned int addr;
-	int adl_adapter, adl_display;
 	char pnpid[8];
 	unsigned char digital; /* 0x80 - digital, 0x00 - analog */
 	struct timeval last;
@@ -69,11 +69,7 @@ struct monitor {
 	
 	enum monitor_io_type {
 		dev,
-		pci,
-		type_adl,
-		MONITOR_IO_DEV = dev,
-		MONITOR_IO_PCI = pci,
-		MONITOR_IO_TYPE_ADL = type_adl
+		MONITOR_IO_DEV = dev
 	} type;
 	int probing; /* are we probing? */
 	
@@ -141,9 +137,6 @@ int ddcci_init(char* usedatadir);
 
 /* Release all library resources. */
 void ddcci_release();
-
-/* Send a keepalive message to ddcpci helper when used. */
-void ddcpci_send_heartbeat();
 
 /* Create $HOME/.ddccontrol and subdirectories if necessary */
 int ddcci_create_config_dir();
