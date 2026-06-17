@@ -1,3 +1,15 @@
+ddccontrol (3.0.0-1) unstable; urgency=medium
+
+  * New upstream version
+  * Install new conf file
+  * More parallel build
+  * SONAME bumped to libddccontrol.so.1; fix shlibs accordingly so
+    dpkg-shlibdeps finds the dependency
+  * Rename libddccontrol0 to libddccontrol1 to follow the new SONAME,
+    with Breaks/Replaces for the upgrade transition
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Wed, 17 Jun 2026 02:51:58 +0100
+
 ddccontrol (2.2.0-1) unstable; urgency=medium
 
   * New upstream release

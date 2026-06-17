@@ -8,3 +8,4 @@ ${env:systemdsystemunitdir}/*.service
 usr/share/dbus-1/system.d/*.conf
 
 usr/share/doc/ddccontrol/*.html usr/share/doc/ddccontrol/html/
+usr/share/ddccontrol/*.conf

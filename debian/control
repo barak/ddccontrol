@@ -46,7 +46,7 @@ Section: libdevel
 Architecture: any
 Multi-Arch: same
 Pre-Depends: ${misc:Pre-Depends}
-Depends: libddccontrol0 (= ${binary:Version}),
+Depends: libddccontrol1 (= ${binary:Version}),
  ${misc:Depends}
 Description: development files for ddccontrol
  DDCcontrol is a tool used to control monitor parameters, like brightness
@@ -55,13 +55,15 @@ Description: development files for ddccontrol
  .
  This package provides the development files.
 
-Package: libddccontrol0
+Package: libddccontrol1
 Section: libs
 Architecture: i386 amd64 ia64 alpha arm armel armhf arm64 loong64
 Multi-Arch: same
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${shlibs:Depends},
  ${misc:Depends}
+Breaks: libddccontrol0 (<< 3.0.0-1~)
+Replaces: libddccontrol0 (<< 3.0.0-1~)
 Description: shared library for ddccontrol
  DDCcontrol is a tool used to control monitor parameters, like brightness
  and contrast, without using the OSD (On Screen Display) and the buttons

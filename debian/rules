@@ -1,6 +1,8 @@
 #!/usr/bin/make -f
 
 export DEB_BUILD_MAINT_OPTIONS=hardening=+bindnow
+include /usr/share/dpkg/buildopts.mk
+JOPT=$(addprefix -j,$(DEB_BUILD_OPTION_PARALLEL))
 
 %:
 	dh $@
@@ -12,6 +14,9 @@ override_dh_auto_configure:
 	dh_auto_configure -- --enable-doc			\
 	 --libexecdir='$$(libdir)'				\
 	 --with-systemdsystemunitdir=$(systemdsystemunitdir)
+
+override_dh_auto_build:
+	dh_auto_build -- $(JOPT)
 
 override_dh_auto_install:
 	dh_auto_install -- modulesdir=$(modulesdir) dbusconfdir=/usr/share/dbus-1/system.d
