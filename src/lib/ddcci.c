@@ -44,6 +44,8 @@
 
 #include "conf.h"
 
+extern int ddccontrol_caps_parse(const char *caps_str, struct caps *caps, int add);
+
 /* ddc/ci defines */
 #define DEFAULT_DDCCI_ADDR	0x37	/* ddc/ci logic sits at 0x37 */
 #define DEFAULT_EDID_ADDR	0x50	/* edid sits at 0x50 */
@@ -436,174 +438,7 @@ int ddcci_readctrl(struct monitor* mon, unsigned char ctrl,
  */
 int ddcci_parse_caps(const char* caps_str, struct caps* caps, int add)
 {
-//	printf("Parsing CAPS (%s).\n", caps_str);
-	int pos = 0; /* position in caps_str */
-	
-	int level = 0; /* CAPS parenthesis level */
-	int svcp = 0; /* Current CAPS section is vcp */
-	int stype = 0; /* Current CAPS section is type */
-	
-	char buf[128];
-	char* endptr;
-	int ind = -1;
-	long val = -1;
-	int i;
-	int removeprevious = 0;
-	
-	int num = 0;
-	int step = 1;
-
-#define DDCCI_PARSE_CAPS_FAIL() \
-	do { \
-		int _ci; \
-		for (_ci = 0; _ci < 256; _ci++) { \
-			if (caps->vcp[_ci]) { \
-				free(caps->vcp[_ci]->values); \
-				free(caps->vcp[_ci]); \
-				caps->vcp[_ci] = NULL; \
-			} \
-		} \
-		return -1; \
-	} while (0)
-	
-	for (pos = 0; caps_str[pos] != 0; pos += step)
-	{
-		step = 1;
-		if (caps_str[pos] == '(') {
-			level++;
-		}
-		else if (caps_str[pos] == ')')
-		{
-			level--;
-			if (level < 0) {
-				fprintf(stderr, _("Invalid CAPS, unbalanced parentheses.\n"));
-				DDCCI_PARSE_CAPS_FAIL();
-			}
-			if (level == 1) {
-				svcp = 0;
-				stype = 0;
-			}
-		}
-		else if (caps_str[pos] != ' ')
-		{
-			if (level == 1) {
-				if ((strncmp(caps_str+pos, "vcp(", 4) == 0) || (strncmp(caps_str+pos, "vcp ", 4) == 0)) {
-					svcp = 1;
-					pos += 2;
-				}
-				else if (strncmp(caps_str+pos, "type", 4) == 0) {
-					stype = 1;
-					pos += 3;
-				}
-			}
-			else if ((stype == 1) && (level == 2)) {
-				if (strncasecmp(caps_str+pos, "lcd", 3) == 0) {
-					caps->type = lcd;
-					pos += 2;
-				}
-				else if (strncasecmp(caps_str+pos, "crt", 3) == 0) {
-					caps->type = crt;
-					pos += 2;
-				}
-			}
-			else if ((svcp == 1) && (level == 2)) {
-				if (!add && ((removeprevious == 1) || (ind >= 0 && ind < 256 && caps->vcp[ind] && caps->vcp[ind]->values_len == 0))) {
-					if(ind >= 0 && ind < 256 && caps->vcp[ind]) {
-						if (caps->vcp[ind]->values) {
-							free(caps->vcp[ind]->values);
-						}
-						free(caps->vcp[ind]);
-						caps->vcp[ind] = NULL;
-					}
-				}
-				buf[0] = caps_str[pos];
-				buf[1] = caps_str[++pos];
-				buf[2] = 0;
-				ind = strtol(buf, &endptr, 16);
-				if (*endptr != 0 || ind < 0 || ind > 255) {
-					fprintf(stderr, _("Can't convert value to int, invalid CAPS (buf=%s, pos=%d).\n"), buf, pos);
-					DDCCI_PARSE_CAPS_FAIL();
-				}
-				if (add) {
-					caps->vcp[ind] = malloc(sizeof(struct vcp_entry));
-					caps->vcp[ind]->values_len = -1;
-					caps->vcp[ind]->values = NULL;
-				}
-				else {
-					removeprevious = 1;
-				}
-				num++;
-			}
-			else if ((svcp == 1) && (level == 3)) {
-				i = 0;
-				while ((caps_str[pos+i] != ' ') && (caps_str[pos+i] != ')') && (caps_str[pos+i] != 0)) {
-					if (i >= (int)sizeof(buf) - 1) {
-						fprintf(stderr, _("CAPS token too long, invalid CAPS (pos=%d).\n"), pos);
-						DDCCI_PARSE_CAPS_FAIL();
-					}
-					buf[i] = caps_str[pos+i];
-					i++;
-				}
-				if (caps_str[pos+i] == 0) {
-					fprintf(stderr, _("Invalid CAPS, unexpected end of string at pos=%d.\n"), pos);
-					DDCCI_PARSE_CAPS_FAIL();
-				}
-				buf[i] = 0;
-				val = strtol(buf, &endptr, 16);
-				if (*endptr != 0 || val < 0 || val > 0xFFFF) {
-					fprintf(stderr, _("Can't convert value to int, invalid CAPS (buf=%s, pos=%d).\n"), buf, pos);
-					DDCCI_PARSE_CAPS_FAIL();
-				}
-				if (add) {
-					if (ind < 0 || ind >= 256 || !caps->vcp[ind]) {
-						fprintf(stderr, _("Invalid CAPS, value without VCP id (pos=%d).\n"), pos);
-						DDCCI_PARSE_CAPS_FAIL();
-					}
-					if (caps->vcp[ind]->values_len == -1) {
-						caps->vcp[ind]->values_len = 1;
-					}
-					else {
-						caps->vcp[ind]->values_len++;
-					}
-					caps->vcp[ind]->values = realloc(caps->vcp[ind]->values, caps->vcp[ind]->values_len*sizeof(unsigned short));
-					caps->vcp[ind]->values[caps->vcp[ind]->values_len-1] = val;
-				}
-				else {
-					if (ind >= 0 && ind < 256 && caps->vcp[ind] && caps->vcp[ind]->values_len > 0) {
-						removeprevious = 0;
-						int j = 0;
-						int vi;
-						for (vi = 0; vi < caps->vcp[ind]->values_len; vi++) {
-							if (caps->vcp[ind]->values[vi] != val) {
-								caps->vcp[ind]->values[j++] = caps->vcp[ind]->values[vi];
-							}
-						}
-						caps->vcp[ind]->values_len = j;
-					}
-				}
-				step = i;
-			}
-		}
-	}
-
-	if (level != 0) {
-		fprintf(stderr, _("Invalid CAPS, unbalanced parentheses.\n"));
-		DDCCI_PARSE_CAPS_FAIL();
-	}
-	
-	if (!add && ind >= 0 && ind < 256 && ((removeprevious == 1) || (caps->vcp[ind] && caps->vcp[ind]->values_len == 0))) {
-		if(caps->vcp[ind]) {
-			if (caps->vcp[ind]->values) {
-				free(caps->vcp[ind]->values);
-			}
-			free(caps->vcp[ind]);
-			caps->vcp[ind] = NULL;
-		}
-	}
-	
-	return num;
-
-#undef DDCCI_PARSE_CAPS_FAIL
+	return ddccontrol_caps_parse(caps_str, caps, add);
 }
 
 /* read capabilities raw data of ddc/ci at address addr starting at offset to buf */
@@ -722,12 +557,66 @@ int ddcci_command(struct monitor* mon, unsigned char cmd)
 	return ddcci_write(mon, _buf, sizeof(_buf));
 }
 
-/* Parse an EDID buffer and fill in mon->pnpid and mon->digital.
+static void ddcci_copy_edid_text(char *dest, size_t dest_len, const unsigned char *src, size_t src_len)
+{
+	size_t len = 0;
+
+	if (!dest || dest_len == 0)
+		return;
+
+	while (len < src_len && len + 1 < dest_len && src[len] != '\n' && src[len] != '\r') {
+		dest[len] = (src[len] >= ' ' && src[len] < 127) ? (char)src[len] : ' ';
+		len++;
+	}
+
+	while (len > 0 && dest[len - 1] == ' ')
+		len--;
+
+	dest[len] = 0;
+}
+
+static void ddcci_parse_edid_descriptors(struct monitor* mon, const unsigned char* buf, int len)
+{
+	int descriptor;
+
+	if (len < DDCCI_EDID_BLOCK_LEN)
+		return;
+
+	for (descriptor = 0; descriptor < 4; descriptor++) {
+		const unsigned char *desc = buf + 0x36 + descriptor * 18;
+
+		if (desc[0] != 0 || desc[1] != 0 || desc[2] != 0 || desc[4] != 0)
+			continue;
+
+		switch (desc[3]) {
+		case 0xfc:
+			ddcci_copy_edid_text(mon->edid_info.monitor_name, sizeof(mon->edid_info.monitor_name),
+			                     desc + 5, 13);
+			break;
+		case 0xff:
+			ddcci_copy_edid_text(mon->edid_info.serial_ascii, sizeof(mon->edid_info.serial_ascii),
+			                     desc + 5, 13);
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+/* Parse an EDID buffer and fill in mon->pnpid, mon->digital, mon->edid, and mon->edid_info.
  * Requires at least DDCCI_EDID_MIN_PARSE_LEN bytes and a valid EDID header.
  * Returns 0 on success, -1 on failure. */
 int ddcci_parse_edid_buf(struct monitor* mon, const unsigned char* buf, int len)
 {
-	if (!mon || !buf || len < DDCCI_EDID_MIN_PARSE_LEN)
+	if (!mon)
+		return -1;
+
+	mon->digital = 0;
+	mon->edid_len = 0;
+	memset(mon->edid, 0, sizeof(mon->edid));
+	memset(&mon->edid_info, 0, sizeof(mon->edid_info));
+
+	if (!buf || len < DDCCI_EDID_MIN_PARSE_LEN)
 		return -1;
 
 	if (buf[0] != 0 || buf[1] != 0xff || buf[2] != 0xff || buf[3] != 0xff ||
@@ -739,26 +628,34 @@ int ddcci_parse_edid_buf(struct monitor* mon, const unsigned char* buf, int len)
 	         ((buf[8] & 3) << 3) + (buf[9] >> 5) + 'A' - 1,
 	         (buf[9] & 31) + 'A' - 1, buf[11], buf[10]);
 
-	if (!mon->probing && verbosity) {
-		unsigned int sn = (unsigned int)buf[0xc] |
-		                  ((unsigned int)buf[0xd] << 8) |
-		                  ((unsigned int)buf[0xe] << 16) |
-		                  ((unsigned int)buf[0xf] << 24);
-		printf(_("Serial number: %u\n"), sn);
-		int week = buf[0x10];
-		int year = buf[0x11] + 1990;
-		printf(_("Manufactured: Week %d, %d\n"), week, year);
-		int ver = buf[0x12];
-		int rev = buf[0x13];
-		printf(_("EDID version: %d.%d\n"), ver, rev);
-		int maxwidth = buf[0x15];
-		int maxheight = buf[0x16];
-		printf(_("Maximum size: %d x %d (cm)\n"), maxwidth, maxheight);
-
-		/* Parse more infos... */
-	}
-
 	mon->digital = (buf[0x14] & 0x80);
+	mon->edid_info.serial_number = (unsigned int)buf[0xc] |
+	                               ((unsigned int)buf[0xd] << 8) |
+	                               ((unsigned int)buf[0xe] << 16) |
+	                               ((unsigned int)buf[0xf] << 24);
+	mon->edid_info.manufacture_week = buf[0x10];
+	mon->edid_info.manufacture_year = buf[0x11] + 1990;
+	mon->edid_info.version = buf[0x12];
+	mon->edid_info.revision = buf[0x13];
+	mon->edid_info.max_width_cm = buf[0x15];
+	mon->edid_info.max_height_cm = buf[0x16];
+	ddcci_parse_edid_descriptors(mon, buf, len);
+
+	mon->edid_len = len >= DDCCI_EDID_BLOCK_LEN ? DDCCI_EDID_BLOCK_LEN : len;
+	memcpy(mon->edid, buf, mon->edid_len);
+
+	if (!mon->probing && verbosity) {
+		printf(_("Serial number: %u\n"), mon->edid_info.serial_number);
+		printf(_("Manufactured: Week %d, %d\n"),
+		       mon->edid_info.manufacture_week, mon->edid_info.manufacture_year);
+		printf(_("EDID version: %d.%d\n"), mon->edid_info.version, mon->edid_info.revision);
+		printf(_("Maximum size: %d x %d (cm)\n"),
+		       mon->edid_info.max_width_cm, mon->edid_info.max_height_cm);
+		if (mon->edid_info.monitor_name[0])
+			printf(_("Monitor name: %s\n"), mon->edid_info.monitor_name);
+		if (mon->edid_info.serial_ascii[0])
+			printf(_("Serial text: %s\n"), mon->edid_info.serial_ascii);
+	}
 
 	return 0;
 }
@@ -875,6 +772,10 @@ int ddcci_open(struct monitor* mon, const char* filename, int probing)
 
 int ddcci_save(struct monitor* mon) 
 {
+	if (mon->__vtable) {
+		return 0;
+	}
+
 	return ddcci_command(mon, DDCCI_COMMAND_SAVE);
 }
 

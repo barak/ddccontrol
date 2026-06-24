@@ -1,45 +1,56 @@
-name: CI
+name: Debian Ports
 
 on:
   push:
     branches: [master]
-  pull_request:
-    branches: [master]
+  workflow_dispatch:
 
 permissions:
   contents: read
   packages: read
 
+concurrency:
+  group: debian-ports-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    name: build (${{ matrix.target.arch }}, ${{ matrix.compiler }})
-    runs-on: ${{ matrix.target.runner }}
+    name: build (${{ matrix.target.arch }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
     strategy:
+      fail-fast: false
       matrix:
         target:
-          - arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          - arch: armhf
-            platform: linux/arm/v7
-            runner: ubuntu-24.04-arm
-        compiler: [gcc, clang]
+          - arch: ppc64el
+            platform: linux/ppc64le
+            qemu: ppc64le
+          - arch: riscv64
+            platform: linux/riscv64
+            qemu: riscv64
+          - arch: s390x
+            platform: linux/s390x
+            qemu: s390x
+
     steps:
       - uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        run: docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.1 --install "${{ matrix.target.qemu }}"
+
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use
+          docker buildx inspect --bootstrap
 
       - name: Prepare CI image
         run: |
           echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin || true
-          image=ghcr.io/ddccontrol/ddccontrol-ci:latest
+          image=ghcr.io/ddccontrol/ddccontrol-debian-ports-ci:latest
           if docker pull --platform "${{ matrix.target.platform }}" "$image"; then
             echo "CI_IMAGE=$image" >> "$GITHUB_ENV"
           else
-            image=ddccontrol-ci:${{ matrix.target.arch }}
-            docker buildx create --use
-            docker buildx inspect --bootstrap
+            image=ddccontrol-debian-ports-ci:${{ matrix.target.arch }}
             docker buildx build \
               --platform "${{ matrix.target.platform }}" \
               --load \
@@ -48,11 +59,11 @@ jobs:
             echo "CI_IMAGE=$image" >> "$GITHUB_ENV"
           fi
 
-      - name: Build
+      - name: Build ddccontrol
         run: |
           docker run --rm \
             --platform "${{ matrix.target.platform }}" \
-            -e CC="${{ matrix.compiler }}" \
+            -e CC=gcc \
             -v "${{ github.workspace }}:/src:ro" \
             "$CI_IMAGE" \
             bash -lc '

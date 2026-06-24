@@ -24,6 +24,7 @@
 #include "internal.h"
 #include "interface.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,9 +77,30 @@ static const struct monitor_vtable dbus_monitor_vtable = {
 	.close = dbus_monitor_close
 };
 
+static int looks_like_pnpid(const char *value)
+{
+	if (value == NULL || strlen(value) != 7) {
+		return 0;
+	}
+
+	for (int i = 0; i < 7; i++) {
+		if (!isalnum((unsigned char)value[i])) {
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
+static int looks_like_caps(const char *value)
+{
+	return value != NULL && value[0] == '(';
+}
+
 int ddcci_dbus_open(DDCControl *proxy, struct monitor **_mon, const char *filename)
 {
 	char *pnpid = NULL;
+	GVariant *v_edid = NULL;
 	GError *error = NULL;
 
 	struct dbus_monitor *dbus_mon;
@@ -98,7 +120,6 @@ int ddcci_dbus_open(DDCControl *proxy, struct monitor **_mon, const char *filena
 		return -1;
 	}
 
-
 	gboolean result = ddccontrol_call_open_monitor_sync(proxy, filename, &pnpid, &mon->caps.raw_caps, NULL, &error);
 	if (result == FALSE) {
 		fprintf(stderr, _("Open monitor failed: %s\n."), error->message);
@@ -108,11 +129,32 @@ int ddcci_dbus_open(DDCControl *proxy, struct monitor **_mon, const char *filena
 		return -1;
 	}
 
+	if (!looks_like_pnpid(pnpid) && looks_like_caps(pnpid) && looks_like_pnpid(mon->caps.raw_caps)) {
+		char *swapped = pnpid;
+		pnpid = mon->caps.raw_caps;
+		mon->caps.raw_caps = swapped;
+	}
+
 	strncpy((char *)&mon->pnpid, pnpid, 7);
 	mon->pnpid[7] = 0;
 	g_free(pnpid);
 
-	ddcci_parse_caps(mon->caps.raw_caps, &mon->caps, 1);
+	result = ddccontrol_call_get_edid_sync(proxy, filename, &v_edid, NULL, &error);
+	if (result == FALSE) {
+		g_clear_error(&error);
+	}
+	if (v_edid != NULL) {
+		gsize edid_len = 0;
+		const unsigned char *edid = g_variant_get_fixed_array(v_edid, &edid_len, sizeof(guchar));
+		if (edid != NULL && ddcci_parse_edid_buf(mon, edid, edid_len) < 0) {
+			mon->edid_len = 0;
+		}
+		g_variant_unref(v_edid);
+	}
+
+	if (ddcci_parse_caps(mon->caps.raw_caps, &mon->caps, 1) < 0) {
+		mon->caps.type = unk;
+	}
 
 	// TODO: duplicated from ddcci.c
 	// DUPLICATED CODE START

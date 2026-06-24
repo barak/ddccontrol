@@ -1,4 +1,4 @@
-AC_INIT([DDC/CI control tool],[3.0.0],[https://github.com/ddccontrol/ddccontrol/issues],[ddccontrol]) dnl x-release-please-version
+AC_INIT([DDC/CI control tool],[3.1.2],[https://github.com/ddccontrol/ddccontrol/issues],[ddccontrol]) dnl x-release-please-version
 AC_CONFIG_SRCDIR([src/ddccontrol/main.c])
 AC_CONFIG_HEADERS([src/config.h])
 AC_CONFIG_MACRO_DIR([m4])
@@ -9,8 +9,15 @@ AM_GNU_GETTEXT([external])
 AM_GNU_GETTEXT_VERSION([0.21])
 GETTEXT_PACKAGE=ddccontrol
 AC_SUBST([GETTEXT_PACKAGE])
+AS_IF([test "x$USE_NLS" = "xyes"],
+      [RUST_GETTEXT_FEATURE="--features gettext"],
+      [RUST_GETTEXT_FEATURE=""])
+AC_SUBST([RUST_GETTEXT_FEATURE])
 
 AC_PROG_CC
+AC_PATH_PROG([CARGO], [cargo], [no])
+AS_IF([test "x$CARGO" = "xno"],
+      [AC_MSG_ERROR([cargo is required to build the Rust CAPS parser])])
 AM_PROG_AR
 AC_PROG_INSTALL
 AC_PROG_MKDIR_P
@@ -23,7 +30,7 @@ AC_CHECK_HEADERS([stdio.h unistd.h sys/time.h stdlib.h errno.h unistd.h string.h
 
 check_xsltproc=yes
 AC_ARG_ENABLE(xsltproc-check,
-  [AS_HELP_STRING([--disable-xsltproc-check],[omit check to see if xsltproc works (enabled)])],
+  [AS_HELP_STRING([--disable-xsltproc-check],[omit runtime check that xsltproc can process DocBook (enabled)])],
   [if test x$enableval = xno; then
     check_xsltproc=no
   fi])
@@ -129,7 +136,7 @@ PKG_CHECK_MODULES([GIO_UNIX], [gio-unix-2.0 >= 2.36.0],[CFLAGS="${GIO_UNIX_CFLAG
 # Doc check
 support_doc=no
 AC_ARG_ENABLE(doc,
-  AS_HELP_STRING([--enable-doc],[enable build of the documentation (disabled)]),
+  AS_HELP_STRING([--enable-doc],[enable documentation build; requires DocBook XML catalog and xsltproc (disabled)]),
   [if test x$enableval = xyes; then
     support_doc=yes
   fi])
@@ -138,6 +145,8 @@ AM_CONDITIONAL(BUILD_DOC, test x$support_doc = xyes)
 
 DOC=
 if test x$support_doc = xyes; then
+   DOC=doc
+
    # Docbook tests
    # Based on http://www.movement.uklinux.net/docs/docbook-autotools/configure.html
    # Copyright � 2003 John Levon
@@ -154,15 +163,11 @@ if test x$support_doc = xyes; then
          AC_MSG_ERROR([xsltproc not found, install it or disable doc building])
       fi
 
-      AC_PATH_PROG(SSH,ssh,ssh)
-      AC_PATH_PROG(SCP,scp,scp)
+      AC_PATH_PROG(SSH,ssh,no)
+      AC_PATH_PROG(SCP,scp,no)
       AC_PATH_PROG(ASPELL,aspell,no)
       AC_PATH_PROG(FOP,fop,no)
-
       AC_PATH_PROG(TIDY,tidy,no)
-      if test "x$TIDY" = "xno" ; then
-         AC_MSG_ERROR([tidy not found, install it or disable doc building])
-      fi
 
       if test x$check_xsltproc = xyes ; then
          AC_MSG_CHECKING([whether xsltproc works])
@@ -178,7 +183,6 @@ if test x$support_doc = xyes; then
 END
          if test "$?" = 0; then
             AC_MSG_RESULT(yes)
-            DOC=doc
          else
             AC_MSG_ERROR([xsltproc does not work, fix this problem or disable doc building])
          fi
