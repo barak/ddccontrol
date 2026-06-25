@@ -1,0 +1,8 @@
+# Build offline against the Rust crates packaged in Debian instead of
+# downloading them from crates.io.  The librust-*-dev build dependencies
+# unpack their sources under /usr/share/cargo/registry.
+[source.crates-io]
+replace-with = "debian-registry"
+
+[source.debian-registry]
+directory = "/usr/share/cargo/registry"
