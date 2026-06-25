@@ -1,3 +1,15 @@
+ddccontrol (3.1.2-3) unstable; urgency=medium
+
+  * Use packaged rust goo instead of downloading crates
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Thu, 25 Jun 2026 05:04:30 +0100
+
+ddccontrol (3.1.2-2) unstable; urgency=medium
+
+  * Build dependency on cargo: rust is in the room!
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Thu, 25 Jun 2026 03:27:43 +0100
+
 ddccontrol (3.1.2-2) unstable; urgency=medium
 
   * Build dependency on cargo: rust is in the room!

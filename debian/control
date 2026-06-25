@@ -4,6 +4,9 @@ Maintainer: Barak A. Pearlmutter <bap@debian.org>
 Homepage: https://github.com/ddccontrol/ddccontrol
 Build-Depends: debhelper-compat (= 13),
  cargo,
+ librust-cfg-if-dev,
+ librust-encoding-rs-dev,
+ librust-roxmltree-dev,
  libpci-dev,
  intltool,
  libxml2-dev,

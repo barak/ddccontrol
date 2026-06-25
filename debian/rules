@@ -10,18 +10,40 @@ JOPT=$(addprefix -j,$(DEB_BUILD_OPTION_PARALLEL))
 export systemdsystemunitdir:=$(shell pkg-config systemd --variable=systemdsystemunitdir)
 export modulesdir=/usr/lib/modules-load.d
 
+# Build the Rust crates offline against the librust-*-dev build
+# dependencies (unpacked under /usr/share/cargo/registry) rather than
+# fetching them from crates.io. Keep the cargo state under target/ so
+# the source tree stays pristine.
+export CARGO_HOME=$(CURDIR)/target/cargo-home
+export CARGO_NET_OFFLINE=true
+
 override_dh_auto_configure:
 	dh_auto_configure -- --enable-doc			\
 	 --libexecdir='$$(libdir)'				\
 	 --with-systemdsystemunitdir=$(systemdsystemunitdir)
 
+# Debian repackages some crates without an upstream checksum, so the
+# crates.io checksums pinned in Cargo.lock do not match the local
+# registry.  Drop the checksums (cargo repopulates them from the local
+# registry) for the build, then restore the upstream Cargo.lock so the
+# source tree is left unchanged.
+exec_before_dh_auto_build:
+	mkdir -p $(CARGO_HOME)
+	cp debian/cargo-config.toml $(CARGO_HOME)/config.toml
+	cp Cargo.lock target/Cargo.lock.orig
+	sed -i '/^checksum = /d' Cargo.lock
 override_dh_auto_build:
 	dh_auto_build -- $(JOPT)
+exec_after_dh_auto_build:
+	mv target/Cargo.lock.orig Cargo.lock
 
 override_dh_auto_install:
 	dh_auto_install -- modulesdir=$(modulesdir) dbusconfdir=/usr/share/dbus-1/system.d
 
 override_dh_auto_test:
+
+execute_before_dh_clean:
+	test ! -f target/Cargo.lock.orig || mv target/Cargo.lock.orig Cargo.lock
 
 execute_after_dh_install:
 	@echo 'Strip wrong #include "config.h" from ddcci.h (bug#518083)'
