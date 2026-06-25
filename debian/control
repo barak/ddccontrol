@@ -3,6 +3,7 @@ Section: utils
 Maintainer: Barak A. Pearlmutter <bap@debian.org>
 Homepage: https://github.com/ddccontrol/ddccontrol
 Build-Depends: debhelper-compat (= 13),
+ cargo,
  libpci-dev,
  intltool,
  libxml2-dev,
