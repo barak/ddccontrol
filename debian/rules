@@ -2,7 +2,6 @@
 
 export DEB_BUILD_MAINT_OPTIONS=hardening=+bindnow
 include /usr/share/dpkg/buildopts.mk
-JOPT=$(addprefix -j,$(DEB_BUILD_OPTION_PARALLEL))
 
 %:
 	dh $@
@@ -32,8 +31,6 @@ execute_before_dh_auto_build:
 	cp debian/cargo-config.toml $(CARGO_HOME)/config.toml
 	cp Cargo.lock target/Cargo.lock.orig
 	sed -i '/^checksum = /d' Cargo.lock
-override_dh_auto_build:
-	dh_auto_build -- $(JOPT)
 execute_after_dh_auto_build:
 	mv target/Cargo.lock.orig Cargo.lock
 

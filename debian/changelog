@@ -1,3 +1,9 @@
+ddccontrol (3.2.0-2) unstable; urgency=medium
+
+  * Remove -jXXX parallel build stuff per Santiago Vila <sanvila@debian.org>
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Thu, 09 Jul 2026 22:38:34 +0100
+
 ddccontrol (3.2.0-1) unstable; urgency=medium
 
   * New upstream version
