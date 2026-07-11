@@ -1,6 +1,7 @@
-ddccontrol (3.2.0-5) UNRELEASED; urgency=medium
+ddccontrol (3.2.0-5) unstable; urgency=medium
 
   * Replace FSF postal address with a reference to https://www.gnu.org/licenses/.
+  * Set upstream metadata fields: Security-Contact.
 
  -- Barak A. Pearlmutter <bap@debian.org>  Sat, 11 Jul 2026 17:49:12 +0000
 
