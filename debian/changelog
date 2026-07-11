@@ -1,3 +1,9 @@
+ddccontrol (3.2.0-5) UNRELEASED; urgency=medium
+
+  * Replace FSF postal address with a reference to https://www.gnu.org/licenses/.
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Sat, 11 Jul 2026 17:49:12 +0000
+
 ddccontrol (3.2.0-4) unstable; urgency=medium
 
   * Drop stale debian/libddccontrol1.shlibs override; dh_makeshlibs now
