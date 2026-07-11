@@ -1,3 +1,9 @@
+ddccontrol (3.2.0-3) unstable; urgency=medium
+
+  * Add librust-libc-dev to Build-Depends to fix FTBFS
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Sat, 11 Jul 2026 12:00:00 +0100
+
 ddccontrol (3.2.0-2) unstable; urgency=medium
 
   * Remove -jXXX parallel build stuff per Santiago Vila <sanvila@debian.org>
