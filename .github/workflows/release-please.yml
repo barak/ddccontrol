@@ -3,6 +3,9 @@ name: Release Please
 on:
   push:
     branches: [master]
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 permissions:
@@ -16,6 +19,7 @@ concurrency:
 
 jobs:
   release-please:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -26,6 +30,33 @@ jobs:
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
+
+  full-database-check:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.user.login == 'github-actions[bot]' &&
+      startsWith(github.head_ref, 'release-please--') &&
+      contains(github.event.pull_request.labels.*.name, 'autorelease: pending')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check out monitor database
+        uses: actions/checkout@v6
+        with:
+          repository: ddccontrol/ddccontrol-db
+          path: ddccontrol-db-checkout
+
+      - name: Generate monitor database options
+        run: make -C ddccontrol-db-checkout db/options.xml
+
+      - name: Test all monitor profiles
+        env:
+          DDCCONTROL_DB_TEST_DATADIR: ${{ github.workspace }}/ddccontrol-db-checkout/db
+          DDCCONTROL_DB_TEST_ALL: "1"
+        run: cargo test --workspace
 
   release-artifacts:
     needs: release-please
@@ -92,3 +123,26 @@ jobs:
           files: |
             ${{ runner.temp }}/release-artifacts/ddccontrol-*.tar.bz2
             ${{ runner.temp }}/release-artifacts/ddccontrol-*-vendor.tar.gz
+
+  notify-website:
+    needs: [release-please, release-artifacts]
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      WEBSITE_DISPATCH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_TOKEN }}
+    steps:
+      - name: Trigger website rebuild
+        if: ${{ env.WEBSITE_DISPATCH_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ env.WEBSITE_DISPATCH_TOKEN }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          gh api --method POST repos/ddccontrol/ddccontrol.github.io/dispatches \
+            --field event_type=ddccontrol-release \
+            --field "client_payload[tag]=$TAG_NAME"
+
+      - name: Report missing website token
+        if: ${{ env.WEBSITE_DISPATCH_TOKEN == '' }}
+        run: echo "WEBSITE_DISPATCH_TOKEN is not configured; the scheduled website build will pick up this release."

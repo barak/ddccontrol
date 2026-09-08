@@ -3,18 +3,26 @@
 `ddccontrol-db` parses the ddccontrol XML monitor database and exports the C ABI
 used by `libddccontrol`.
 
-CAPS string parsing lives in the sibling `ddccontrol-caps` crate.
+CAPS string parsing lives in the sibling `ddccontrol-caps` crate. EDID parsing
+lives in `ddccontrol-edid`; this crate includes both parsers in the existing
+Rust static library and exposes their C ABI entry points.
 
 ## C ABI Ownership
 
 This crate deliberately preserves the existing C ABI while moving the XML
 database parser to Rust.
 
+The static library also provides the C ABI bridge for local user-profile XML.
+Parsing and serialization live in the separate `ddccontrol-profile` crate;
+monitor reads, writes, retries, and profile-list management remain in C.
+
 Rust allocates returned C data with the process C allocator through `malloc`.
 The C side must release that data with the matching ddccontrol free functions:
 
 - VCP entries created by `ddccontrol_caps_parse` are owned by the caller's
   `struct caps` and are released by the existing C caps cleanup paths.
+- `ddccontrol_edid_parse` writes into caller-owned fixed-size storage and does
+  not allocate or transfer ownership across the ABI.
 - Monitor databases returned by `ddcci_create_db` must be released with
   `ddcci_free_db`.
 
@@ -23,17 +31,21 @@ internal pointers to C. Do not release Rust-created database structs with
 anything other than the documented C cleanup function.
 
 The Rust mirror structs are `#[repr(C)]`. Keep the Rust layout tests and the C
-`test_abi_layout` test in sync with `src/lib/ddcci.h`, `src/lib/monitor_db.h`,
-and `src/lib/monitor_db_internal.h`.
+`test_abi_layout` test in sync with `src/lib/ddcci.h`, `src/lib/rust_ffi.h`,
+`src/lib/monitor_db.h`, and `src/lib/monitor_db_internal.h`.
 
 ## Compatibility Tests
 
 The normal test suite includes a golden monitor database fixture under
 `fixtures/compat-db`. To smoke-test a real `ddccontrol-db` checkout as well,
-set `DDCCONTROL_DB_TEST_DATADIR` to either the checkout root or the `db`
+first generate its `db/options.xml` from `db/options.xml.in` with
+`make -C /path/to/ddccontrol-db db/options.xml`. Then set
+`DDCCONTROL_DB_TEST_DATADIR` to either the checkout root or the `db`
 directory that contains `options.xml` and `monitor/` before running
 `cargo test`.
 
 By default the real database test loads the first 25 monitor profiles in sorted
-order. Set `DDCCONTROL_DB_TEST_PROFILES` to a comma-separated profile list to
-select specific profiles.
+order. Set `DDCCONTROL_DB_TEST_ALL=1` to load every monitor profile, or set
+`DDCCONTROL_DB_TEST_PROFILES` to a comma-separated profile list to select
+specific profiles. These two variables are mutually exclusive. The all-profiles
+mode fails on the first profile that cannot be parsed or loaded.

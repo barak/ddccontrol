@@ -41,6 +41,7 @@
 
 #include "ddcci.h"
 #include "internal.h"
+#include "rust_ffi.h"
 
 #include "conf.h"
 
@@ -191,8 +192,8 @@ static int i2c_write(struct monitor* mon, unsigned int addr, unsigned char *buf,
 	}
 }
 
-/* read at most len bytes from i2c address addr, to buf */
-/* return -1 on failure */
+/* read len bytes from i2c address addr into buf */
+/* return len on success, -1 on failure */
 static int i2c_read(struct monitor* mon, unsigned int addr, unsigned char *buf, unsigned char len)
 {
 	switch (mon->type) {
@@ -201,7 +202,7 @@ static int i2c_read(struct monitor* mon, unsigned int addr, unsigned char *buf, 
 	{
 		struct i2c_rdwr_ioctl_data msg_rdwr;
 		struct i2c_msg             i2cmsg;
-		int i;
+		int i, read_len;
 	
 		memset(&msg_rdwr, 0, sizeof(msg_rdwr));
 		memset(&i2cmsg, 0, sizeof(i2cmsg));
@@ -217,7 +218,9 @@ static int i2c_read(struct monitor* mon, unsigned int addr, unsigned char *buf, 
 		i2cmsg.len   = len;
 		i2cmsg.buf   = buf;
 	
-		if ((i = ioctl(mon->fd, I2C_RDWR, &msg_rdwr)) < 0)
+		i = ioctl(mon->fd, I2C_RDWR, &msg_rdwr);
+		read_len = ddcci_i2c_read_length(i, len);
+		if (read_len < 0)
 		{
 			if (!mon->probing || verbosity) {
 				perror("ioctl()");
@@ -227,14 +230,10 @@ static int i2c_read(struct monitor* mon, unsigned int addr, unsigned char *buf, 
 		}
 
 		if (verbosity > 1) {
-			dumphex(stderr, "Recv", buf, i);
+			dumphex(stderr, "Recv", buf, read_len);
 		}
 
-#ifdef __FreeBSD__
-		i = len; // FreeBSD ioctl() returns 0
-#endif
-
-		return i;
+		return read_len;
 	}
 #endif
 	default:
@@ -557,57 +556,13 @@ int ddcci_command(struct monitor* mon, unsigned char cmd)
 	return ddcci_write(mon, _buf, sizeof(_buf));
 }
 
-static void ddcci_copy_edid_text(char *dest, size_t dest_len, const unsigned char *src, size_t src_len)
-{
-	size_t len = 0;
-
-	if (!dest || dest_len == 0)
-		return;
-
-	while (len < src_len && len + 1 < dest_len && src[len] != '\n' && src[len] != '\r') {
-		dest[len] = (src[len] >= ' ' && src[len] < 127) ? (char)src[len] : ' ';
-		len++;
-	}
-
-	while (len > 0 && dest[len - 1] == ' ')
-		len--;
-
-	dest[len] = 0;
-}
-
-static void ddcci_parse_edid_descriptors(struct monitor* mon, const unsigned char* buf, int len)
-{
-	int descriptor;
-
-	if (len < DDCCI_EDID_BLOCK_LEN)
-		return;
-
-	for (descriptor = 0; descriptor < 4; descriptor++) {
-		const unsigned char *desc = buf + 0x36 + descriptor * 18;
-
-		if (desc[0] != 0 || desc[1] != 0 || desc[2] != 0 || desc[4] != 0)
-			continue;
-
-		switch (desc[3]) {
-		case 0xfc:
-			ddcci_copy_edid_text(mon->edid_info.monitor_name, sizeof(mon->edid_info.monitor_name),
-			                     desc + 5, 13);
-			break;
-		case 0xff:
-			ddcci_copy_edid_text(mon->edid_info.serial_ascii, sizeof(mon->edid_info.serial_ascii),
-			                     desc + 5, 13);
-			break;
-		default:
-			break;
-		}
-	}
-}
-
 /* Parse an EDID buffer and fill in mon->pnpid, mon->digital, mon->edid, and mon->edid_info.
  * Requires at least DDCCI_EDID_MIN_PARSE_LEN bytes and a valid EDID header.
  * Returns 0 on success, -1 on failure. */
 int ddcci_parse_edid_buf(struct monitor* mon, const unsigned char* buf, int len)
 {
+	struct ddccontrol_edid_result parsed;
+
 	if (!mon)
 		return -1;
 
@@ -616,33 +571,14 @@ int ddcci_parse_edid_buf(struct monitor* mon, const unsigned char* buf, int len)
 	memset(mon->edid, 0, sizeof(mon->edid));
 	memset(&mon->edid_info, 0, sizeof(mon->edid_info));
 
-	if (!buf || len < DDCCI_EDID_MIN_PARSE_LEN)
+	if (!buf || len < 0 || ddccontrol_edid_parse(buf, (size_t)len, &parsed) < 0)
 		return -1;
 
-	if (buf[0] != 0 || buf[1] != 0xff || buf[2] != 0xff || buf[3] != 0xff ||
-	    buf[4] != 0xff || buf[5] != 0xff || buf[6] != 0xff || buf[7] != 0)
-		return -1;
-
-	snprintf(mon->pnpid, 8, "%c%c%c%02X%02X",
-	         ((buf[8] >> 2) & 31) + 'A' - 1,
-	         ((buf[8] & 3) << 3) + (buf[9] >> 5) + 'A' - 1,
-	         (buf[9] & 31) + 'A' - 1, buf[11], buf[10]);
-
-	mon->digital = (buf[0x14] & 0x80);
-	mon->edid_info.serial_number = (unsigned int)buf[0xc] |
-	                               ((unsigned int)buf[0xd] << 8) |
-	                               ((unsigned int)buf[0xe] << 16) |
-	                               ((unsigned int)buf[0xf] << 24);
-	mon->edid_info.manufacture_week = buf[0x10];
-	mon->edid_info.manufacture_year = buf[0x11] + 1990;
-	mon->edid_info.version = buf[0x12];
-	mon->edid_info.revision = buf[0x13];
-	mon->edid_info.max_width_cm = buf[0x15];
-	mon->edid_info.max_height_cm = buf[0x16];
-	ddcci_parse_edid_descriptors(mon, buf, len);
-
-	mon->edid_len = len >= DDCCI_EDID_BLOCK_LEN ? DDCCI_EDID_BLOCK_LEN : len;
-	memcpy(mon->edid, buf, mon->edid_len);
+	memcpy(mon->pnpid, parsed.pnpid, sizeof(mon->pnpid));
+	mon->digital = parsed.digital;
+	memcpy(mon->edid, parsed.edid, sizeof(mon->edid));
+	mon->edid_len = parsed.edid_len;
+	mon->edid_info = parsed.info;
 
 	if (!mon->probing && verbosity) {
 		printf(_("Serial number: %u\n"), mon->edid_info.serial_number);
@@ -697,6 +633,8 @@ int ddcci_read_edid(struct monitor* mon, int addr)
 */
 static int ddcci_open_with_addr(struct monitor* mon, const char* filename, int addr, int edid, int probing) 
 {
+	int caps_result;
+
 	memset(mon, 0, sizeof(struct monitor));
 	
 	mon->probing = probing;
@@ -720,7 +658,7 @@ static int ddcci_open_with_addr(struct monitor* mon, const char* filename, int a
 		return -2;
 	}
 	
-	ddcci_caps(mon);
+	caps_result = ddcci_caps(mon);
 	mon->db = ddcci_create_db(mon->pnpid, &mon->caps, 1);
 	mon->fallback = 0; /* No fallback */
 	
@@ -756,7 +694,7 @@ static int ddcci_open_with_addr(struct monitor* mon, const char* filename, int a
 			return -1;
 		}
 	}
-	else {
+	else if (!ddcci_caps_prove_support(caps_result)) {
 		if (ddcci_command(mon, DDCCI_COMMAND_PRESENCE) < 0) {
 			return -1;
 		}

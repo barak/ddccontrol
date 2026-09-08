@@ -1,5 +1,6 @@
 use ddccontrol_caps::{Caps, MonitorType, VcpEntry};
-use libc::{c_char, c_int, c_ushort, c_void, free, malloc};
+use ddccontrol_edid::Edid;
+use libc::{c_char, c_int, c_uchar, c_uint, c_ushort, c_void, free, malloc, size_t};
 use std::ffi::CStr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
@@ -18,13 +19,290 @@ pub struct CCaps {
     raw_caps: *mut c_char,
 }
 
-#[cfg(test)]
-macro_rules! field_offset {
-    ($ty:ty, $field:tt) => {{
-        let value = std::mem::MaybeUninit::<$ty>::uninit();
-        let base = value.as_ptr();
-        unsafe { std::ptr::addr_of!((*base).$field) as usize - base as usize }
-    }};
+const EDID_BLOCK_LEN: usize = ddccontrol_edid::EDID_BLOCK_LEN;
+const EDID_TEXT_LEN: usize = 14;
+
+#[repr(C)]
+pub struct CEdidInfo {
+    serial_number: c_uint,
+    manufacture_week: c_int,
+    manufacture_year: c_int,
+    version: c_int,
+    revision: c_int,
+    max_width_cm: c_int,
+    max_height_cm: c_int,
+    monitor_name: [c_char; EDID_TEXT_LEN],
+    serial_ascii: [c_char; EDID_TEXT_LEN],
+}
+
+#[repr(C)]
+pub struct CEdidResult {
+    pnpid: [c_char; 8],
+    digital: c_uchar,
+    edid: [c_uchar; EDID_BLOCK_LEN],
+    edid_len: c_int,
+    info: CEdidInfo,
+}
+
+#[no_mangle]
+/// Parse EDID bytes into a C-compatible result without transferring ownership.
+///
+/// # Safety
+///
+/// `buf` must point to at least `min(len, 128)` readable bytes and `result` must
+/// point to writable storage for one `CEdidResult`. Both pointers must remain
+/// valid for the duration of the call.
+pub unsafe extern "C" fn ddccontrol_edid_parse(
+    buf: *const c_uchar,
+    len: size_t,
+    result: *mut CEdidResult,
+) -> c_int {
+    catch_unwind(AssertUnwindSafe(|| {
+        ddccontrol_edid_parse_inner(buf, len, result)
+    }))
+    .unwrap_or(-1)
+}
+
+unsafe fn ddccontrol_edid_parse_inner(
+    buf: *const c_uchar,
+    len: size_t,
+    result: *mut CEdidResult,
+) -> c_int {
+    if buf.is_null() || result.is_null() {
+        return -1;
+    }
+
+    let parse_len = len.min(EDID_BLOCK_LEN);
+    let parsed = match ddccontrol_edid::parse(slice::from_raw_parts(buf, parse_len)) {
+        Ok(parsed) => parsed,
+        Err(_) => return -1,
+    };
+    ptr::write(result, edid_to_c(&parsed));
+    0
+}
+
+fn edid_to_c(parsed: &Edid) -> CEdidResult {
+    let mut pnpid = [0; 8];
+    for (output, input) in pnpid.iter_mut().zip(parsed.pnp_id().bytes()) {
+        *output = input as c_char;
+    }
+
+    let mut edid = [0; EDID_BLOCK_LEN];
+    edid[..parsed.raw().len()].copy_from_slice(parsed.raw());
+    let info = parsed.info();
+
+    CEdidResult {
+        pnpid,
+        digital: if parsed.is_digital_input() { 0x80 } else { 0 },
+        edid,
+        edid_len: parsed.raw().len() as c_int,
+        info: CEdidInfo {
+            serial_number: info.serial_number,
+            manufacture_week: c_int::from(info.manufacture_week),
+            manufacture_year: c_int::from(info.manufacture_year),
+            version: c_int::from(info.version),
+            revision: c_int::from(info.revision),
+            max_width_cm: c_int::from(info.max_width_cm),
+            max_height_cm: c_int::from(info.max_height_cm),
+            monitor_name: text_to_c(&info.monitor_name),
+            serial_ascii: text_to_c(&info.serial_ascii),
+        },
+    }
+}
+
+fn text_to_c(text: &str) -> [c_char; EDID_TEXT_LEN] {
+    let mut output = [0; EDID_TEXT_LEN];
+    for (destination, source) in output.iter_mut().zip(text.bytes()) {
+        *destination = source as c_char;
+    }
+    output
+}
+
+mod user_profile {
+    use ddccontrol_profile::{Control, Profile, MAX_CONTROLS};
+    use libc::{c_char, c_int, c_uchar, c_ushort, c_void, free, malloc};
+    use std::ffi::CStr;
+    use std::fs;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::path::{Path, PathBuf};
+    use std::ptr;
+
+    #[repr(C)]
+    pub struct CProfile {
+        filename: *mut c_char,
+        name: *mut c_uchar,
+        pnpid: *mut c_uchar,
+        size: c_int,
+        address: [c_uchar; MAX_CONTROLS],
+        value: [c_ushort; MAX_CONTROLS],
+        next: *mut CProfile,
+    }
+
+    #[no_mangle]
+    /// Load a user profile and return C-owned storage allocated with `malloc`.
+    ///
+    /// # Safety
+    ///
+    /// `filename` must point to a readable NUL-terminated path. The returned
+    /// profile and its strings must be released by `ddcci_free_profile`.
+    pub unsafe extern "C" fn ddccontrol_profile_load(filename: *const c_char) -> *mut CProfile {
+        catch_unwind(AssertUnwindSafe(|| profile_load_inner(filename))).unwrap_or(ptr::null_mut())
+    }
+
+    unsafe fn profile_load_inner(filename: *const c_char) -> *mut CProfile {
+        if filename.is_null() {
+            return ptr::null_mut();
+        }
+
+        let filename = CStr::from_ptr(filename);
+        let path = pathbuf_from_c_path(filename);
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(_) => return ptr::null_mut(),
+        };
+        let profile = match ddccontrol_profile::parse_bytes(&bytes) {
+            Ok(profile) => profile,
+            Err(_) => return ptr::null_mut(),
+        };
+
+        profile_to_c(filename.to_bytes(), &profile).unwrap_or(ptr::null_mut())
+    }
+
+    #[no_mangle]
+    /// Serialize a C user profile to its local XML file.
+    ///
+    /// # Safety
+    ///
+    /// `profile` must point to a valid `struct profile` whose strings are
+    /// NUL-terminated and whose `size` is between zero and 256.
+    pub unsafe extern "C" fn ddccontrol_profile_save(profile: *const CProfile) -> c_int {
+        catch_unwind(AssertUnwindSafe(|| profile_save_inner(profile))).unwrap_or(-1)
+    }
+
+    unsafe fn profile_save_inner(profile: *const CProfile) -> c_int {
+        if profile.is_null() || (*profile).filename.is_null() {
+            return -1;
+        }
+        let rust_profile = match profile_from_c(profile) {
+            Some(profile) => profile,
+            None => return -1,
+        };
+        let xml = match ddccontrol_profile::serialize(&rust_profile) {
+            Ok(xml) => xml,
+            Err(_) => return -1,
+        };
+        let path = pathbuf_from_c_path(CStr::from_ptr((*profile).filename));
+        match fs::write(&path, xml) {
+            Ok(()) => 0,
+            Err(_) => -1,
+        }
+    }
+
+    unsafe fn profile_to_c(filename: &[u8], profile: &Profile) -> Option<*mut CProfile> {
+        let filename = c_bytes(filename)?;
+        let name = match c_bytes(profile.name.as_bytes()) {
+            Some(name) => name,
+            None => {
+                free(filename as *mut c_void);
+                return None;
+            }
+        };
+        let pnpid = match c_bytes(profile.pnp_id.as_bytes()) {
+            Some(pnpid) => pnpid,
+            None => {
+                free(filename as *mut c_void);
+                free(name as *mut c_void);
+                return None;
+            }
+        };
+
+        let output = malloc(std::mem::size_of::<CProfile>()) as *mut CProfile;
+        if output.is_null() {
+            free(filename as *mut c_void);
+            free(name as *mut c_void);
+            free(pnpid as *mut c_void);
+            return None;
+        }
+
+        let mut address = [0; MAX_CONTROLS];
+        let mut value = [0; MAX_CONTROLS];
+        for (index, control) in profile.controls.iter().enumerate() {
+            address[index] = control.address;
+            value[index] = control.value;
+        }
+        ptr::write(
+            output,
+            CProfile {
+                filename: filename as *mut c_char,
+                name,
+                pnpid,
+                size: profile.controls.len() as c_int,
+                address,
+                value,
+                next: ptr::null_mut(),
+            },
+        );
+        Some(output)
+    }
+
+    unsafe fn profile_from_c(profile: *const CProfile) -> Option<Profile> {
+        if (*profile).name.is_null() || (*profile).pnpid.is_null() {
+            return None;
+        }
+        let size = usize::try_from((*profile).size).ok()?;
+        if size > MAX_CONTROLS {
+            return None;
+        }
+        let name = CStr::from_ptr((*profile).name as *const c_char)
+            .to_str()
+            .ok()?
+            .to_string();
+        let pnp_id = CStr::from_ptr((*profile).pnpid as *const c_char)
+            .to_str()
+            .ok()?
+            .to_string();
+        let controls = (0..size)
+            .map(|index| Control {
+                address: (*profile).address[index],
+                value: (*profile).value[index],
+            })
+            .collect();
+        Some(Profile {
+            name,
+            pnp_id,
+            controls,
+        })
+    }
+
+    unsafe fn c_bytes(bytes: &[u8]) -> Option<*mut c_uchar> {
+        if bytes.contains(&0) {
+            return None;
+        }
+        let output = malloc(bytes.len() + 1) as *mut c_uchar;
+        if output.is_null() {
+            return None;
+        }
+        ptr::copy_nonoverlapping(bytes.as_ptr(), output, bytes.len());
+        *output.add(bytes.len()) = 0;
+        Some(output)
+    }
+
+    fn pathbuf_from_c_path(path: &CStr) -> PathBuf {
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            Path::new(std::ffi::OsStr::from_bytes(path.to_bytes())).to_path_buf()
+        }
+        #[cfg(not(unix))]
+        {
+            PathBuf::from(path.to_string_lossy().into_owned())
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        include!("../tests/unit/profile_ffi_layout.rs");
+    }
 }
 
 #[no_mangle]
@@ -163,35 +441,7 @@ unsafe fn free_c_vcp_entries(caps: *mut CCaps) {
 
 #[cfg(test)]
 mod abi_tests {
-    use super::*;
-    use std::mem::{align_of, size_of};
-
-    fn align_up(value: usize, align: usize) -> usize {
-        (value + align - 1) & !(align - 1)
-    }
-
-    #[test]
-    fn caps_ffi_layout_matches_c_abi_contract() {
-        assert_eq!(size_of::<c_int>(), 4);
-        assert_eq!(size_of::<c_ushort>(), 2);
-
-        assert_eq!(field_offset!(CVcpEntry, values_len), 0);
-        assert_eq!(
-            field_offset!(CVcpEntry, values),
-            align_up(size_of::<c_int>(), align_of::<*mut c_ushort>())
-        );
-
-        let expected_vcp_bytes = size_of::<[*mut CVcpEntry; 256]>();
-        assert_eq!(field_offset!(CCaps, vcp), 0);
-        assert_eq!(field_offset!(CCaps, monitor_type), expected_vcp_bytes);
-        assert_eq!(
-            field_offset!(CCaps, raw_caps),
-            align_up(
-                expected_vcp_bytes + size_of::<c_int>(),
-                align_of::<*mut c_char>()
-            )
-        );
-    }
+    include!("../tests/unit/ffi_layout.rs");
 }
 
 mod monitor_db {
@@ -810,7 +1060,9 @@ mod monitor_db {
 
     fn read_xml_file(path: &Path) -> std::io::Result<String> {
         let bytes = fs::read(path)?;
-        Ok(decode_xml_bytes(&bytes).into_owned())
+        Ok(normalize_xml_document(
+            decode_xml_bytes(&bytes).into_owned(),
+        ))
     }
 
     fn decode_xml_bytes(bytes: &[u8]) -> Cow<'_, str> {
@@ -819,14 +1071,32 @@ mod monitor_db {
         decoded
     }
 
-    fn xml_declared_encoding(bytes: &[u8]) -> Option<&'static Encoding> {
-        let prefix_len = bytes.len().min(256);
-        let prefix = &bytes[..prefix_len];
-        let declaration_start = prefix.iter().position(|byte| !byte.is_ascii_whitespace())?;
-        let prefix = &prefix[declaration_start..];
-        if !prefix.starts_with(b"<?xml") {
-            return None;
+    fn normalize_xml_document(xml: String) -> String {
+        let mut cursor = 0;
+        loop {
+            cursor += xml[cursor..]
+                .find(|ch: char| !ch.is_whitespace())
+                .unwrap_or(xml.len() - cursor);
+            if !xml[cursor..].starts_with("<!--") {
+                break;
+            }
+            let Some(comment_end) = xml[cursor + 4..].find("-->") else {
+                return xml;
+            };
+            cursor += 4 + comment_end + 3;
         }
+
+        if cursor > 0 && xml[cursor..].starts_with("<?xml") {
+            xml[cursor..].to_string()
+        } else {
+            xml
+        }
+    }
+
+    fn xml_declared_encoding(bytes: &[u8]) -> Option<&'static Encoding> {
+        let declaration_start = xml_declaration_start(bytes)?;
+        let prefix = &bytes[declaration_start..];
+        let prefix = &prefix[..prefix.len().min(256)];
         let declaration_end = prefix
             .windows(2)
             .position(|window| window == b"?>")
@@ -847,6 +1117,25 @@ mod monitor_db {
             .position(|byte| *byte == quote)
             .map(|index| index + 1)?;
         Encoding::for_label(&after_equals[1..label_end])
+    }
+
+    fn xml_declaration_start(bytes: &[u8]) -> Option<usize> {
+        let mut cursor = 0;
+        loop {
+            cursor += bytes[cursor..]
+                .iter()
+                .position(|byte| !byte.is_ascii_whitespace())?;
+            if bytes[cursor..].starts_with(b"<?xml") {
+                return Some(cursor);
+            }
+            if !bytes[cursor..].starts_with(b"<!--") {
+                return None;
+            }
+            let comment_end = bytes[cursor + 4..]
+                .windows(3)
+                .position(|window| window == b"-->")?;
+            cursor += 4 + comment_end + 3;
+        }
     }
 
     fn trim_ascii_bytes_start(input: &[u8]) -> &[u8] {
@@ -1392,274 +1681,13 @@ mod monitor_db {
     }
 
     #[cfg(test)]
-    mod compatibility_tests;
+    mod compatibility_tests {
+        include!("../tests/unit/monitor_db_compatibility.rs");
+    }
 
     #[cfg(test)]
     mod tests {
-        use super::*;
-        use std::mem::{align_of, size_of};
-
-        fn align_up(value: usize, align: usize) -> usize {
-            (value + align - 1) & !(align - 1)
-        }
-
-        #[test]
-        fn monitor_database_ffi_layout_matches_c_abi_contract() {
-            assert_eq!(size_of::<c_int>(), 4);
-            assert_eq!(size_of::<c_uchar>(), 1);
-            assert_eq!(size_of::<c_ushort>(), 2);
-
-            assert_eq!(field_offset!(CValueDb, id), 0);
-            assert_eq!(
-                field_offset!(CValueDb, name),
-                align_up(size_of::<*mut c_uchar>(), align_of::<*mut c_uchar>())
-            );
-            assert_eq!(
-                field_offset!(CValueDb, value),
-                size_of::<*mut c_uchar>() * 2
-            );
-            assert_eq!(field_offset!(CValueDbPrivate, public_value), 0);
-            assert!(field_offset!(CValueDbPrivate, value16) >= size_of::<CValueDb>());
-
-            assert_eq!(field_offset!(CControlDb, id), 0);
-            assert_eq!(field_offset!(CControlDb, name), size_of::<*mut c_uchar>());
-            assert!(field_offset!(CControlDb, address) > field_offset!(CControlDb, name));
-            assert!(field_offset!(CControlDb, value_list) > field_offset!(CControlDb, next));
-
-            assert_eq!(field_offset!(CSubgroupDb, name), 0);
-            assert_eq!(
-                field_offset!(CSubgroupDb, pattern),
-                size_of::<*mut c_uchar>()
-            );
-            assert_eq!(field_offset!(CGroupDb, name), 0);
-            assert_eq!(field_offset!(CMonitorDb, name), 0);
-            assert_eq!(
-                field_offset!(CMonitorDb, init),
-                align_up(size_of::<*mut c_uchar>(), align_of::<c_int>())
-            );
-        }
-
-        #[cfg(unix)]
-        #[test]
-        fn c_datadir_paths_preserve_non_utf8_bytes() {
-            use std::ffi::CString;
-            use std::os::unix::ffi::OsStrExt;
-
-            let raw_path = b"/tmp/ddccontrol-\xff-db".to_vec();
-            let c_path = CString::new(raw_path.clone()).unwrap();
-
-            let path = unsafe { pathbuf_from_c_path(c_path.as_ptr()) };
-
-            assert_eq!(path.as_os_str().as_bytes(), raw_path);
-        }
-
-        #[test]
-        fn c_bytes_preserves_non_utf8_labels() {
-            let label = b"Contr\xf4le".to_vec();
-
-            let ptr = unsafe { c_bytes(&label).unwrap() };
-            let copied = unsafe { CStr::from_ptr(ptr as *const c_char).to_bytes().to_vec() };
-            unsafe {
-                free(ptr as *mut c_void);
-            }
-
-            assert_eq!(copied, label);
-        }
-
-        #[test]
-        fn decode_xml_bytes_uses_declared_non_utf8_encoding() {
-            let xml =
-                b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><options name=\"Contr\xf4le\"/>";
-
-            let decoded = decode_xml_bytes(xml);
-
-            assert!(decoded.contains("Contr\u{00f4}le"));
-        }
-
-        #[test]
-        fn parse_int_matches_strtol_style_database_values() {
-            assert_eq!(parse_int(" 1").unwrap(), 1);
-            assert_eq!(parse_int("+1").unwrap(), 1);
-            assert_eq!(parse_int("-1").unwrap(), -1);
-            assert_eq!(parse_int("0x10").unwrap(), 16);
-            assert_eq!(parse_int("010").unwrap(), 8);
-            assert!(parse_int("09").is_err());
-            assert!(parse_int("1 ").is_err());
-        }
-
-        #[test]
-        fn unmatched_monitor_values_are_not_parsed() {
-            let option_control = OptionControl {
-                id: "input".to_string(),
-                name: "Input".to_string(),
-                control_type: CONTROL_TYPE_LIST,
-                refresh: REFRESH_TYPE_NONE,
-                values: vec![OptionValue {
-                    id: "hdmi".to_string(),
-                    name: Some("HDMI".to_string()),
-                }],
-            };
-            let monitor_control = MonitorControl {
-                id: "input".to_string(),
-                raw_address: Some("0x60".to_string()),
-                raw_delay: None,
-                values: vec![
-                    MonitorValue {
-                        element_name: "value".to_string(),
-                        id: Some("hdmi".to_string()),
-                        raw_value: Some(" 1".to_string()),
-                        line: 1,
-                    },
-                    MonitorValue {
-                        element_name: "value".to_string(),
-                        id: Some("unused".to_string()),
-                        raw_value: Some("not-an-int".to_string()),
-                        line: 2,
-                    },
-                ],
-                child_index: 0,
-            };
-
-            let values = get_value_list(&option_control, &monitor_control, true).unwrap();
-
-            assert_eq!(values.len(), 1);
-            assert_eq!(values[0].id, "hdmi");
-            assert_eq!(values[0].value16, 1);
-        }
-
-        #[test]
-        fn parse_monitor_controls_keeps_unknown_control_children_for_validation() {
-            let doc = Document::parse(
-                r#"<controls>
-                    <unknown id="bad"/>
-                    <control id="input" address="0x60"/>
-                </controls>"#,
-            )
-            .unwrap();
-
-            let parsed = parse_monitor_controls(doc.root_element()).unwrap();
-
-            assert_eq!(parsed.elements.len(), 2);
-            assert_eq!(parsed.elements[0].name, "unknown");
-            assert_eq!(parsed.controls.len(), 1);
-            assert_eq!(parsed.controls[0].child_index, 1);
-        }
-
-        #[test]
-        fn missing_value_id_is_deferred_until_control_is_matched() {
-            let doc = Document::parse(
-                r#"<controls>
-                    <control id="input" address="0x60">
-                        <value value="1"/>
-                    </control>
-                </controls>"#,
-            )
-            .unwrap();
-
-            let parsed = parse_monitor_controls(doc.root_element()).unwrap();
-
-            assert_eq!(parsed.controls.len(), 1);
-            assert!(parsed.controls[0].values[0].id.is_none());
-        }
-
-        #[test]
-        fn monitor_values_without_id_use_unmatched_validation() {
-            let option_control = OptionControl {
-                id: "input".to_string(),
-                name: "Input".to_string(),
-                control_type: CONTROL_TYPE_LIST,
-                refresh: REFRESH_TYPE_NONE,
-                values: vec![OptionValue {
-                    id: "hdmi".to_string(),
-                    name: Some("HDMI".to_string()),
-                }],
-            };
-            let monitor_control = MonitorControl {
-                id: "input".to_string(),
-                raw_address: Some("0x60".to_string()),
-                raw_delay: None,
-                values: vec![MonitorValue {
-                    element_name: "value".to_string(),
-                    id: None,
-                    raw_value: Some("1".to_string()),
-                    line: 1,
-                }],
-                child_index: 0,
-            };
-
-            assert!(get_value_list(&option_control, &monitor_control, false).is_err());
-            assert!(get_value_list(&option_control, &monitor_control, true).is_ok());
-        }
-
-        #[test]
-        fn parse_monitor_controls_keeps_control_without_id_unmatched() {
-            let doc = Document::parse(
-                r#"<controls>
-                    <control address="0x60"/>
-                </controls>"#,
-            )
-            .unwrap();
-
-            let parsed = parse_monitor_controls(doc.root_element()).unwrap();
-
-            assert_eq!(parsed.elements.len(), 1);
-            assert_eq!(parsed.elements[0].name, "control");
-            assert!(parsed.elements[0].id.is_none());
-            assert!(parsed.controls.is_empty());
-        }
-
-        #[test]
-        fn parse_monitor_controls_defers_address_and_delay_validation() {
-            let doc = Document::parse(
-                r#"<controls>
-                    <control id="unknown" address="not-hex" delay="bad"/>
-                </controls>"#,
-            )
-            .unwrap();
-
-            let parsed = parse_monitor_controls(doc.root_element()).unwrap();
-
-            assert_eq!(parsed.controls.len(), 1);
-            assert!(monitor_control_address(&parsed.controls[0]).is_err());
-            assert!(monitor_control_delay(&parsed.controls[0]).is_err());
-        }
-
-        #[test]
-        fn unknown_monitor_value_children_use_unmatched_validation() {
-            let option_control = OptionControl {
-                id: "input".to_string(),
-                name: "Input".to_string(),
-                control_type: CONTROL_TYPE_LIST,
-                refresh: REFRESH_TYPE_NONE,
-                values: vec![OptionValue {
-                    id: "hdmi".to_string(),
-                    name: Some("HDMI".to_string()),
-                }],
-            };
-            let monitor_control = MonitorControl {
-                id: "input".to_string(),
-                raw_address: Some("0x60".to_string()),
-                raw_delay: None,
-                values: vec![
-                    MonitorValue {
-                        element_name: "value".to_string(),
-                        id: Some("hdmi".to_string()),
-                        raw_value: Some("1".to_string()),
-                        line: 1,
-                    },
-                    MonitorValue {
-                        element_name: "unknown".to_string(),
-                        id: Some("extra".to_string()),
-                        raw_value: None,
-                        line: 2,
-                    },
-                ],
-                child_index: 0,
-            };
-
-            assert!(get_value_list(&option_control, &monitor_control, false).is_err());
-            assert!(get_value_list(&option_control, &monitor_control, true).is_ok());
-        }
+        include!("../tests/unit/monitor_db.rs");
     }
 
     #[derive(Debug)]

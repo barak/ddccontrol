@@ -17,8 +17,22 @@ name = "ddccontrol-db"
 version = "0.1.0"
 dependencies = [
  "ddccontrol-caps",
+ "ddccontrol-edid",
+ "ddccontrol-profile",
  "encoding_rs",
  "libc",
+ "roxmltree",
+]
+
+[[package]]
+name = "ddccontrol-edid"
+version = "0.1.0"
+
+[[package]]
+name = "ddccontrol-profile"
+version = "0.1.0"
+dependencies = [
+ "encoding_rs",
  "roxmltree",
 ]
 
