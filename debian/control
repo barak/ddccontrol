@@ -2,7 +2,7 @@ Source: ddccontrol
 Section: utils
 Maintainer: Barak A. Pearlmutter <bap@debian.org>
 Homepage: https://github.com/ddccontrol/ddccontrol
-Build-Depends: debhelper-compat (= 13),
+Build-Depends: debhelper-compat (= 14),
  cargo,
  librust-cfg-if-dev,
  librust-encoding-rs-dev,
@@ -25,9 +25,7 @@ Vcs-Browser: https://salsa.debian.org/debian/ddccontrol
 
 Package: gddccontrol
 Architecture: any
-Depends: ddccontrol (= ${binary:Version}),
- ${shlibs:Depends},
- ${misc:Depends}
+Depends: ddccontrol (= ${binary:Version})
 Enhances: ddccontrol
 Description: program to control monitor parameters (graphical interface)
  DDCcontrol is a tool used to control monitor parameters, like brightness
@@ -38,9 +36,7 @@ Description: program to control monitor parameters (graphical interface)
 
 Package: ddccontrol
 Architecture: any
-Depends: ddccontrol-db,
- ${shlibs:Depends},
- ${misc:Depends}
+Depends: ddccontrol-db
 Description: program to control monitor parameters
  DDCcontrol is a tool used to control monitor parameters, like brightness
  and contrast, without using the OSD (On Screen Display) and the buttons
@@ -50,9 +46,7 @@ Package: libddccontrol-dev
 Section: libdevel
 Architecture: any
 Multi-Arch: same
-Pre-Depends: ${misc:Pre-Depends}
-Depends: libddccontrol1 (= ${binary:Version}),
- ${misc:Depends}
+Depends: libddccontrol1 (= ${binary:Version})
 Description: development files for ddccontrol
  DDCcontrol is a tool used to control monitor parameters, like brightness
  and contrast, without using the OSD (On Screen Display) and the buttons
@@ -64,9 +58,6 @@ Package: libddccontrol1
 Section: libs
 Architecture: any
 Multi-Arch: same
-Pre-Depends: ${misc:Pre-Depends}
-Depends: ${shlibs:Depends},
- ${misc:Depends}
 Breaks: libddccontrol0 (<< 3.0.0-1~)
 Replaces: libddccontrol0 (<< 3.0.0-1~)
 Description: shared library for ddccontrol

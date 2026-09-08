@@ -1,3 +1,16 @@
+ddccontrol (3.3.0-1) unstable; urgency=medium
+
+  * New upstream version
+  * Bump debhelper compat level to 14
+  * Rename debian/README.Debian to debian/ddccontrol.README.Debian:
+    debhelper compat 14 wants package-prefixed config files, and its
+    content concerns the ddccontrol package
+  * Drop ${shlibs:Depends}, ${misc:Depends} and ${misc:Pre-Depends} from
+    debian/control; debhelper compat 14 applies these relationship
+    substvars automatically
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Tue, 08 Sep 2026 10:36:40 +0100
+
 ddccontrol (3.2.0-5) unstable; urgency=medium
 
   * Replace FSF postal address with a reference to https://www.gnu.org/licenses/.
