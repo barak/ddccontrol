@@ -1,0 +1,72 @@
+From: Barak A. Pearlmutter <bap@debian.org>
+Subject: Allow cross-building the Rust components
+ Add a RUST_TARGET configure variable naming the Rust target triple.
+ When set, cargo is passed --target, and the Rust artifacts are taken
+ from the corresponding target/TRIPLE/release directory.
+Forwarded: https://github.com/ddccontrol/ddccontrol/pull/345
+Last-Update: 2026-10-12
+
+diff --git a/Makefile.am b/Makefile.am
+index 821b29d..f7eefc6 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -112,7 +112,7 @@ EXTRA_DIST = config.rpath intltool-extract.in intltool-merge.in intltool-update.
+ DISTCLEANFILES = intltool-extract intltool-merge intltool-update
+ DISTCHECK_CONFIGURE_FLAGS = --enable-doc --with-systemdsystemunitdir='$${prefix}/lib/systemd/system'
+ 
+-RUST_SCANMONITOR = $(top_builddir)/target/release/ddccontrol-scanmonitor
++RUST_SCANMONITOR = $(top_builddir)/target/$(RUST_TARGET_SUBDIR)release/ddccontrol-scanmonitor
+ # Include transitive Rust sources so edits to shared crates rebuild the scanner.
+ RUST_SCANMONITOR_DEPS = \
+ 	$(top_builddir)/config.status \
+@@ -124,7 +124,7 @@ RUST_SCANMONITOR_DEPS = \
+ all-local: $(RUST_SCANMONITOR)
+ 
+ $(RUST_SCANMONITOR): $(RUST_SCANMONITOR_DEPS)
+-	cd "$(top_srcdir)" && DDCONTROL_DATADIR="$(datadir)/ddccontrol-db" CARGO_TARGET_DIR="$(abs_top_builddir)/target" $(CARGO) build --release --locked -p ddccontrol-scanmonitor
++	cd "$(top_srcdir)" && DDCONTROL_DATADIR="$(datadir)/ddccontrol-db" CARGO_TARGET_DIR="$(abs_top_builddir)/target" $(CARGO) build --release --locked $(CARGO_TARGET_ARGS) -p ddccontrol-scanmonitor
+ 
+ install-exec-local: $(RUST_SCANMONITOR)
+ 	$(MKDIR_P) "$(DESTDIR)$(bindir)"
+diff --git a/configure.ac b/configure.ac
+index fa9e2a3..71e3b6a 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -23,6 +23,15 @@ AS_IF(["$CARGO" --version >/dev/null 2>&1],
+       [AC_MSG_RESULT([yes])],
+       [AC_MSG_RESULT([no])
+        AC_MSG_ERROR([cargo was found but could not run. If this is rustup's cargo shim, install and select a Rust toolchain first, for example: rustup default stable. Alternatively set CARGO to a working cargo binary.])])
++AC_ARG_VAR([RUST_TARGET],
++  [Rust target triple to build the Rust components for (default: the Rust host)])
++AS_IF([test -n "$RUST_TARGET"],
++      [CARGO_TARGET_ARGS="--target $RUST_TARGET"
++       RUST_TARGET_SUBDIR="$RUST_TARGET/"],
++      [CARGO_TARGET_ARGS=""
++       RUST_TARGET_SUBDIR=""])
++AC_SUBST([CARGO_TARGET_ARGS])
++AC_SUBST([RUST_TARGET_SUBDIR])
+ AM_PROG_AR
+ AC_PROG_INSTALL
+ AC_PROG_MKDIR_P
+diff --git a/src/lib/Makefile.am b/src/lib/Makefile.am
+index f1d99af..2e9e480 100644
+--- a/src/lib/Makefile.am
++++ b/src/lib/Makefile.am
+@@ -15,7 +15,7 @@ EXTRA_DIST = $(modules_DATA)
+ 
+ lib_LTLIBRARIES = libddccontrol.la
+ 
+-RUST_DB_LIB = $(top_builddir)/target/release/libddccontrol_db.a
++RUST_DB_LIB = $(top_builddir)/target/$(RUST_TARGET_SUBDIR)release/libddccontrol_db.a
+ RUST_DB_DEPS = \
+ 	$(top_srcdir)/Cargo.toml \
+ 	$(top_srcdir)/Cargo.lock \
+@@ -57,7 +57,7 @@ $(RUST_DB_LIB): $(RUST_DB_DEPS)
+ 		echo "If this is rustup's cargo shim, run 'rustup default stable' or set CARGO to a working cargo binary and rerun configure."; \
+ 		exit 1; \
+ 	}
+-	cd $(top_srcdir) && DDCONTROL_DATADIR="$(datadir)/ddccontrol-db" CARGO_TARGET_DIR=$(abs_top_builddir)/target $(CARGO) build --release -p ddccontrol-db $(RUST_GETTEXT_FEATURE)
++	cd $(top_srcdir) && DDCONTROL_DATADIR="$(datadir)/ddccontrol-db" CARGO_TARGET_DIR=$(abs_top_builddir)/target $(CARGO) build --release $(CARGO_TARGET_ARGS) -p ddccontrol-db $(RUST_GETTEXT_FEATURE)
+ 
+ libddccontrol_la_SOURCES = ddcci.c ddcci.h ddcci_protocol.h monitor_db.h rust_ffi.h \
+    i2c-dev.h conf.c conf.h internal.h \

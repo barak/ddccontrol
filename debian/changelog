@@ -1,3 +1,20 @@
+ddccontrol (3.4.0-1) unstable; urgency=medium
+
+  * New upstream version
+  * Build-depend on librust-ciborium-dev and librust-sha2-0.10-dev,
+    needed by the new CBOR database crates
+  * Regenerate Cargo.lock against the packaged crates at build time
+  * Install the new ddccontrol-scanmonitor helper in ddccontrol
+  * New binary package ddccontrol-dbgen, providing the generator for the
+    CBOR monitor database of ddccontrol-db.  Its manual page is generated
+    by help2man, with a pre-generated copy in debian/ for cross-builds.
+  * Build Rust code with debug info, and declare Static-Built-Using
+  * Support cross-building the Rust code: add a RUST_TARGET configure
+    variable (patch), pass the Debian Rust host triple and cross linker,
+    and build-depend on cargo:native, rustc:native and libstd-rust-dev
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Mon, 12 Oct 2026 13:42:31 +0100
+
 ddccontrol (3.3.0-1) unstable; urgency=medium
 
   * New upstream version

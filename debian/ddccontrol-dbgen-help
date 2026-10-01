@@ -1,0 +1,7 @@
+#!/bin/sh
+# Run $DDCCONTROL_DBGEN, dropping the tagline of its --help output (the
+# man page has its own NAME) and reformatting its usage lines into the
+# "Usage: ... / or: ..." form help2man turns into a SYNOPSIS.
+"$DDCCONTROL_DBGEN" "$@" | sed -e '/^ddccontrol-dbgen: /d' \
+ -e '/^Usage:$/{N;s/\n */ /;}' \
+ -e 's/^  ddccontrol-dbgen /  or: ddccontrol-dbgen /'

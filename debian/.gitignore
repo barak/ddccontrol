@@ -4,6 +4,7 @@
 /.debhelper/
 /autoreconf.after
 /autoreconf.before
+/ddccontrol-dbgen/
 /ddccontrol/
 /debhelper-build-stamp
 /files

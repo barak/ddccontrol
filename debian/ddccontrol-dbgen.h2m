@@ -1,0 +1,55 @@
+[NAME]
+ddccontrol-dbgen \- generate and inspect the ddccontrol CBOR monitor database
+
+[DESCRIPTION]
+.B ddccontrol-dbgen
+is an offline tool that converts the XML monitor database used by
+.BR ddccontrol (1)
+into a deterministic CBOR encoding, and validates, dumps, and rewrites
+such CBOR databases.
+It performs no monitor I/O.
+
+[COMMANDS]
+.TP
+.B convert
+Read the XML database in
+.I DIRECTORY
+(containing
+.I options.xml
+and
+.IR monitor/*.xml )
+and write the CBOR database to
+.IR OUTPUT .
+.B \-\-revision
+overrides the date taken from
+.IR options.xml .
+.B \-\-snapshot
+also writes the snapshot sidecar, which must be installed together
+with the CBOR database.
+On failure, any existing output and snapshot files are removed.
+.TP
+.B validate
+Check that
+.I INPUT
+is a valid CBOR database.
+.TP
+.B dump
+Print
+.I INPUT
+as JSON on standard output.
+CBOR maps are written as
+.B {"$map": [[key, value], ...]}
+and byte strings as
+.BR {"$bytes": "hex"} .
+.TP
+.B rewrite
+Re-encode
+.I INPUT
+to
+.IR OUTPUT ,
+preserving unknown fields and extensions.
+
+[SEE ALSO]
+.BR ddccontrol (1)
+.PP
+.I /usr/share/doc/ddccontrol-dbgen/README.md

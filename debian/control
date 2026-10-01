@@ -3,11 +3,16 @@ Section: utils
 Maintainer: Barak A. Pearlmutter <bap@debian.org>
 Homepage: https://github.com/ddccontrol/ddccontrol
 Build-Depends: debhelper-compat (= 14),
- cargo,
+ cargo:native,
+ rustc:native,
+ libstd-rust-dev,
+ help2man <!cross>,
  librust-cfg-if-dev,
+ librust-ciborium-dev,
  librust-encoding-rs-dev,
  librust-libc-dev,
  librust-roxmltree-dev,
+ librust-sha2-0.10-dev,
  libpci-dev,
  intltool,
  libxml2-dev,
@@ -36,6 +41,7 @@ Description: program to control monitor parameters (graphical interface)
 
 Package: ddccontrol
 Architecture: any
+Static-Built-Using: ${cargo:Static-Built-Using}
 Depends: ddccontrol-db
 Description: program to control monitor parameters
  DDCcontrol is a tool used to control monitor parameters, like brightness
@@ -60,9 +66,24 @@ Architecture: any
 Multi-Arch: same
 Breaks: libddccontrol0 (<< 3.0.0-1~)
 Replaces: libddccontrol0 (<< 3.0.0-1~)
+Static-Built-Using: ${cargo:Static-Built-Using}
 Description: shared library for ddccontrol
  DDCcontrol is a tool used to control monitor parameters, like brightness
  and contrast, without using the OSD (On Screen Display) and the buttons
  in front of the monitor.
  .
  This package provides the shared library.
+
+Package: ddccontrol-dbgen
+Architecture: any
+Multi-Arch: foreign
+Static-Built-Using: ${cargo:Static-Built-Using}
+Description: generator for the ddccontrol binary monitor database
+ DDCcontrol is a tool used to control monitor parameters, like brightness
+ and contrast, without using the OSD (On Screen Display) and the buttons
+ in front of the monitor.
+ .
+ This package provides ddccontrol-dbgen, which converts the XML monitor
+ database of ddccontrol-db into the compact CBOR format, and can
+ validate, dump, and rewrite such CBOR databases.  It is needed only to
+ build ddccontrol-db.

@@ -1,6 +1,7 @@
 #!/usr/bin/make -f
 
 export DEB_BUILD_MAINT_OPTIONS=hardening=+bindnow
+include /usr/share/rustc/architecture.mk
 include /usr/share/dpkg/buildopts.mk
 
 %:
@@ -15,29 +16,70 @@ export modulesdir=/usr/lib/modules-load.d
 # the source tree stays pristine.
 export CARGO_HOME=$(CURDIR)/target/cargo-home
 export CARGO_NET_OFFLINE=true
+export CARGO_TARGET_DIR=$(CURDIR)/target
+# Emit debug info so dh_strip can produce useful -dbgsym packages.
+export CARGO_PROFILE_RELEASE_DEBUG=true
+# Build the Rust code for the host architecture, linking with the
+# matching (cross) compiler.
+RUST_TARGET_DIR = target/$(DEB_HOST_RUST_TYPE)/release
+export CARGO_TARGET_$(shell echo $(DEB_HOST_RUST_TYPE) | tr a-z- A-Z_)_LINKER = $(DEB_HOST_GNU_TYPE)-gcc
 
 override_dh_auto_configure:
 	dh_auto_configure -- --enable-doc			\
 	 --libexecdir='$$(libdir)'				\
-	 --with-systemdsystemunitdir=$(systemdsystemunitdir)
+	 --with-systemdsystemunitdir=$(systemdsystemunitdir)	\
+	 RUST_TARGET=$(DEB_HOST_RUST_TYPE)
 
-# Debian repackages some crates without an upstream checksum, so the
-# crates.io checksums pinned in Cargo.lock do not match the local
-# registry.  Drop the checksums (cargo repopulates them from the local
-# registry) for the build, then restore the upstream Cargo.lock so the
+# The crate versions pinned in the upstream Cargo.lock need not match
+# those packaged in Debian, and Debian repackages some crates without
+# an upstream checksum.  Regenerate Cargo.lock against the local
+# registry for the build, then restore the upstream Cargo.lock so the
 # source tree is left unchanged.
 execute_before_dh_auto_build:
 	mkdir -p $(CARGO_HOME)
 	cp debian/cargo-config.toml $(CARGO_HOME)/config.toml
-	cp Cargo.lock target/Cargo.lock.orig
-	sed -i '/^checksum = /d' Cargo.lock
+	test -f target/Cargo.lock.orig || cp Cargo.lock target/Cargo.lock.orig
+	cargo generate-lockfile --offline
 execute_after_dh_auto_build:
-	mv target/Cargo.lock.orig Cargo.lock
+	cargo build --release --locked --target $(DEB_HOST_RUST_TYPE) \
+	 -p ddccontrol-dbgen
+# help2man must run the program, which is impossible when cross-building,
+# so then use the pre-generated copy in debian/.  Otherwise warn if that
+# copy is stale; refresh it with: cp target/ddccontrol-dbgen.1 debian/
+ifeq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
+	DDCCONTROL_DBGEN=$(RUST_TARGET_DIR)/ddccontrol-dbgen \
+	 help2man --no-info --include=debian/ddccontrol-dbgen.h2m \
+	 --output=target/ddccontrol-dbgen.1 debian/ddccontrol-dbgen-help
+	cmp -s target/ddccontrol-dbgen.1 debian/ddccontrol-dbgen.1 \
+	 || echo 'warning: debian/ddccontrol-dbgen.1 is out of date' >&2
+else
+	cp debian/ddccontrol-dbgen.1 target/ddccontrol-dbgen.1
+endif
 
 override_dh_auto_install:
 	dh_auto_install -- modulesdir=$(modulesdir) dbusconfdir=/usr/share/dbus-1/system.d
+execute_after_dh_auto_install:
+	install -D $(RUST_TARGET_DIR)/ddccontrol-dbgen \
+	 debian/ddccontrol-dbgen/usr/bin/ddccontrol-dbgen
+	cp Cargo.lock target/Cargo.lock.used
+	mv target/Cargo.lock.orig Cargo.lock
 
 override_dh_auto_test:
+
+# Record the Debian packages of the Rust crates statically linked into
+# the binaries.
+execute_before_dh_gencontrol:
+	for p in $$(sed -n 's/^name = "\(.*\)"/\1/p' target/Cargo.lock.used); do \
+	  v=$$(sed -n "/^name = \"$$p\"$$/{n;s/^version = \"\(.*\)\"/\1/p}" target/Cargo.lock.used); \
+	  test -d /usr/share/cargo/registry/$$p-$$v || continue; \
+	  dpkg-query -S /usr/share/cargo/registry/$$p-$$v \
+	   | sed 's/: .*//; s/, /\n/g' \
+	   | grep -E '^[^:]+(:$(DEB_HOST_ARCH))?$$'; \
+	done | sort -u | xargs -r dpkg-query -f '$${Package} (= $${Version}), ' -W \
+	 | sed 's/, $$//; s/^/cargo:Static-Built-Using=/' > target/static-built-using
+	for p in ddccontrol libddccontrol1 ddccontrol-dbgen; do \
+	  cat target/static-built-using >> debian/$$p.substvars; \
+	done
 
 execute_before_dh_clean:
 	test ! -f target/Cargo.lock.orig || mv target/Cargo.lock.orig Cargo.lock
