@@ -19,6 +19,11 @@ RUST_DB_LIB = $(top_builddir)/target/release/libddccontrol_db.a
 RUST_DB_DEPS = \
 	$(top_srcdir)/Cargo.toml \
 	$(top_srcdir)/Cargo.lock \
+	$(top_srcdir)/crates/ddccontrol-db-format/Cargo.toml \
+	$(top_srcdir)/crates/ddccontrol-db-format/src/lib.rs \
+	$(top_srcdir)/crates/ddccontrol-db-format/src/writing.rs \
+	$(top_srcdir)/crates/ddccontrol-db-format/src/descriptors.rs \
+	$(top_srcdir)/crates/ddccontrol-db-format/src/xml.rs \
 	$(top_srcdir)/crates/ddccontrol-caps/Cargo.toml \
 	$(top_srcdir)/crates/ddccontrol-caps/src/lib.rs \
 	$(top_srcdir)/crates/ddccontrol-caps/fixtures/basic_lcd.caps \
@@ -32,8 +37,19 @@ RUST_DB_DEPS = \
 	$(top_srcdir)/crates/ddccontrol-profile/Cargo.toml \
 	$(top_srcdir)/crates/ddccontrol-profile/src/lib.rs \
 	$(top_srcdir)/crates/ddccontrol-profile/tests/profile.rs \
+	$(top_srcdir)/crates/ddccontrol-monitorlist/Cargo.toml \
+	$(top_srcdir)/crates/ddccontrol-monitorlist/src/lib.rs \
+	$(top_srcdir)/crates/ddccontrol-protocol/Cargo.toml \
+	$(top_srcdir)/crates/ddccontrol-protocol/src/lib.rs \
 	$(top_srcdir)/crates/ddccontrol-db/Cargo.toml \
-	$(top_srcdir)/crates/ddccontrol-db/src/lib.rs
+	$(top_srcdir)/crates/ddccontrol-db/src/monitor_list.rs \
+	$(top_srcdir)/crates/ddccontrol-db/src/protocol.rs \
+	$(top_srcdir)/crates/ddccontrol-db/src/cbor.rs \
+	$(top_srcdir)/crates/ddccontrol-db/src/lib.rs \
+	$(top_srcdir)/crates/ddccontrol-db/src/options.rs \
+	$(top_srcdir)/crates/ddccontrol-db/src/xml.rs \
+	$(top_srcdir)/crates/ddccontrol-xml/Cargo.toml \
+	$(top_srcdir)/crates/ddccontrol-xml/src/lib.rs
 
 $(RUST_DB_LIB): $(RUST_DB_DEPS)
 	@$(CARGO) --version >/dev/null 2>&1 || { \
@@ -43,14 +59,14 @@ $(RUST_DB_LIB): $(RUST_DB_DEPS)
 	}
 	cd $(top_srcdir) && DDCONTROL_DATADIR="$(datadir)/ddccontrol-db" CARGO_TARGET_DIR=$(abs_top_builddir)/target $(CARGO) build --release -p ddccontrol-db $(RUST_GETTEXT_FEATURE)
 
-libddccontrol_la_SOURCES = ddcci.c ddcci.h monitor_db.h rust_ffi.h \
+libddccontrol_la_SOURCES = ddcci.c ddcci.h ddcci_protocol.h monitor_db.h rust_ffi.h \
    i2c-dev.h conf.c conf.h internal.h \
    monitor_db_internal.h
 
 libddccontrol_la_LDFLAGS = -version-info 1:0:0
 libddccontrol_la_LIBADD = $(RUST_DB_LIB) $(LIBXML2_LIBS)
 
-check_PROGRAMS = test_issueurl test_parse_caps test_edid test_profile test_abi_layout
+check_PROGRAMS = test_issueurl test_parse_caps test_caps_exchange test_edid test_profile test_monitorlist test_abi_layout test_ddcci_protocol
 TESTS = $(check_PROGRAMS)
 
 check-local:
@@ -67,6 +83,12 @@ test_issueurl_LDADD = libddccontrol.la $(LIBXML2_LIBS)
 test_parse_caps_SOURCES = tests/test_parse_caps.c
 test_parse_caps_LDADD = libddccontrol.la $(LIBXML2_LIBS)
 
+test_caps_exchange_SOURCES = tests/test_caps_exchange.c
+test_caps_exchange_LDADD = libddccontrol.la $(LIBXML2_LIBS)
+
+test_ddcci_protocol_SOURCES = tests/test_ddcci_protocol.c
+test_ddcci_protocol_LDADD = libddccontrol.la $(LIBXML2_LIBS)
+
 test_edid_SOURCES = tests/test_edid.c
 test_edid_LDADD = libddccontrol.la $(LIBXML2_LIBS)
 
@@ -74,3 +96,6 @@ test_profile_SOURCES = tests/test_profile.c
 test_profile_LDADD = libddccontrol.la $(LIBXML2_LIBS)
 
 test_abi_layout_SOURCES = tests/test_abi_layout.c
+
+test_monitorlist_SOURCES = tests/test_monitorlist.c
+test_monitorlist_LDADD = libddccontrol.la $(LIBXML2_LIBS)

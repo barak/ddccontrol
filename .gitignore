@@ -60,9 +60,19 @@ target/
 
 # built binaries
 /src/daemon/ddccontrol_service
+/src/daemon/test_open_monitor
+/src/daemon/test_open_monitor.log
+/src/daemon/test_open_monitor.trs
+/src/daemon/test-suite.log
 /src/ddccontrol/ddccontrol
+/src/ddccontrol/test-suite.log
+/src/ddccontrol/tests/*.log
+/src/ddccontrol/tests/*.trs
 /src/ddcpci/ddcpci
 /src/gddccontrol/gddccontrol
+/src/gddccontrol/test-suite.log
+/src/gddccontrol/tests/*.log
+/src/gddccontrol/tests/*.trs
 
 /src/lib/ddccontrol.pc
 /src/lib/test-suite.log
@@ -72,15 +82,24 @@ target/
 /src/lib/test_parse_caps
 /src/lib/test_parse_caps.log
 /src/lib/test_parse_caps.trs
+/src/lib/test_caps_exchange
+/src/lib/test_caps_exchange.log
+/src/lib/test_caps_exchange.trs
 /src/lib/test_edid
 /src/lib/test_edid.log
 /src/lib/test_edid.trs
+/src/lib/test_monitorlist
+/src/lib/test_monitorlist.log
+/src/lib/test_monitorlist.trs
 /src/lib/test_profile
 /src/lib/test_profile.log
 /src/lib/test_profile.trs
 /src/lib/test_abi_layout
 /src/lib/test_abi_layout.log
 /src/lib/test_abi_layout.trs
+/src/lib/test_ddcci_protocol
+/src/lib/test_ddcci_protocol.log
+/src/lib/test_ddcci_protocol.trs
 /src/stamp-h1
 Makefile
 Makefile.in

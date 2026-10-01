@@ -78,8 +78,7 @@ fn c_bytes_preserves_non_utf8_labels() {
 
 #[test]
 fn decode_xml_bytes_uses_declared_non_utf8_encoding() {
-    let xml =
-        b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><options name=\"Contr\xf4le\"/>";
+    let xml = b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><options name=\"Contr\xf4le\"/>";
 
     let decoded = decode_xml_bytes(xml);
 
@@ -123,11 +122,14 @@ fn unmatched_monitor_values_are_not_parsed() {
     let option_control = OptionControl {
         id: "input".to_string(),
         name: "Input".to_string(),
-        control_type: CONTROL_TYPE_LIST,
-        refresh: REFRESH_TYPE_NONE,
+        control_type: ControlType::List,
+        refresh: Refresh::None,
+        raw_address: None,
+        unavailable: false,
         values: vec![OptionValue {
             id: "hdmi".to_string(),
             name: Some("HDMI".to_string()),
+            raw_value: None,
         }],
     };
     let monitor_control = MonitorControl {
@@ -149,6 +151,7 @@ fn unmatched_monitor_values_are_not_parsed() {
             },
         ],
         child_index: 0,
+        unavailable: false,
     };
 
     let values = get_value_list(&option_control, &monitor_control, true).unwrap();
@@ -160,7 +163,7 @@ fn unmatched_monitor_values_are_not_parsed() {
 
 #[test]
 fn parse_monitor_controls_keeps_unknown_control_children_for_validation() {
-    let doc = Document::parse(
+    let doc = parse_xml(
         r#"<controls>
             <unknown id="bad"/>
             <control id="input" address="0x60"/>
@@ -168,7 +171,7 @@ fn parse_monitor_controls_keeps_unknown_control_children_for_validation() {
     )
     .unwrap();
 
-    let parsed = parse_monitor_controls(doc.root_element()).unwrap();
+    let parsed = parse_monitor_controls(&doc).unwrap();
 
     assert_eq!(parsed.elements.len(), 2);
     assert_eq!(parsed.elements[0].name, "unknown");
@@ -178,7 +181,7 @@ fn parse_monitor_controls_keeps_unknown_control_children_for_validation() {
 
 #[test]
 fn missing_value_id_is_deferred_until_control_is_matched() {
-    let doc = Document::parse(
+    let doc = parse_xml(
         r#"<controls>
             <control id="input" address="0x60">
                 <value value="1"/>
@@ -187,7 +190,7 @@ fn missing_value_id_is_deferred_until_control_is_matched() {
     )
     .unwrap();
 
-    let parsed = parse_monitor_controls(doc.root_element()).unwrap();
+    let parsed = parse_monitor_controls(&doc).unwrap();
 
     assert_eq!(parsed.controls.len(), 1);
     assert!(parsed.controls[0].values[0].id.is_none());
@@ -198,11 +201,14 @@ fn monitor_values_without_id_use_unmatched_validation() {
     let option_control = OptionControl {
         id: "input".to_string(),
         name: "Input".to_string(),
-        control_type: CONTROL_TYPE_LIST,
-        refresh: REFRESH_TYPE_NONE,
+        control_type: ControlType::List,
+        refresh: Refresh::None,
+        raw_address: None,
+        unavailable: false,
         values: vec![OptionValue {
             id: "hdmi".to_string(),
             name: Some("HDMI".to_string()),
+            raw_value: None,
         }],
     };
     let monitor_control = MonitorControl {
@@ -216,6 +222,7 @@ fn monitor_values_without_id_use_unmatched_validation() {
             line: 1,
         }],
         child_index: 0,
+        unavailable: false,
     };
 
     assert!(get_value_list(&option_control, &monitor_control, false).is_err());
@@ -224,14 +231,14 @@ fn monitor_values_without_id_use_unmatched_validation() {
 
 #[test]
 fn parse_monitor_controls_keeps_control_without_id_unmatched() {
-    let doc = Document::parse(
+    let doc = parse_xml(
         r#"<controls>
             <control address="0x60"/>
         </controls>"#,
     )
     .unwrap();
 
-    let parsed = parse_monitor_controls(doc.root_element()).unwrap();
+    let parsed = parse_monitor_controls(&doc).unwrap();
 
     assert_eq!(parsed.elements.len(), 1);
     assert_eq!(parsed.elements[0].name, "control");
@@ -241,14 +248,14 @@ fn parse_monitor_controls_keeps_control_without_id_unmatched() {
 
 #[test]
 fn parse_monitor_controls_defers_address_and_delay_validation() {
-    let doc = Document::parse(
+    let doc = parse_xml(
         r#"<controls>
             <control id="unknown" address="not-hex" delay="bad"/>
         </controls>"#,
     )
     .unwrap();
 
-    let parsed = parse_monitor_controls(doc.root_element()).unwrap();
+    let parsed = parse_monitor_controls(&doc).unwrap();
 
     assert_eq!(parsed.controls.len(), 1);
     assert!(monitor_control_address(&parsed.controls[0]).is_err());
@@ -260,11 +267,14 @@ fn unknown_monitor_value_children_use_unmatched_validation() {
     let option_control = OptionControl {
         id: "input".to_string(),
         name: "Input".to_string(),
-        control_type: CONTROL_TYPE_LIST,
-        refresh: REFRESH_TYPE_NONE,
+        control_type: ControlType::List,
+        refresh: Refresh::None,
+        raw_address: None,
+        unavailable: false,
         values: vec![OptionValue {
             id: "hdmi".to_string(),
             name: Some("HDMI".to_string()),
+            raw_value: None,
         }],
     };
     let monitor_control = MonitorControl {
@@ -286,6 +296,7 @@ fn unknown_monitor_value_children_use_unmatched_validation() {
             },
         ],
         child_index: 0,
+        unavailable: false,
     };
 
     assert!(get_value_list(&option_control, &monitor_control, false).is_err());

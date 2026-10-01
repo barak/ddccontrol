@@ -6,6 +6,12 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 use std::slice;
 
+mod cbor;
+mod monitor_list;
+pub mod options;
+mod protocol;
+mod xml;
+
 #[repr(C)]
 pub struct CVcpEntry {
     values_len: c_int,
@@ -305,18 +311,28 @@ mod user_profile {
     }
 }
 
+/// Apply a CAPS string, returning -1 on a parse/allocation error or Rust panic.
+///
+/// # Safety
+///
+/// Non-null `caps_str` must point to a readable, NUL-terminated string that does
+/// not overlap `caps` or its entries. Non-null `caps` must point to an initialized,
+/// exclusively writable `CCaps`. Each non-null VCP entry and values buffer must
+/// be a distinct, valid C allocation that can be released with `free`; a non-null
+/// values buffer with positive `values_len` must hold that many `c_ushort`s.
+/// Entries may be freed and replaced during the call. The caller owns the
+/// resulting entries and must release them with the C CAPS cleanup functions.
+/// `raw_caps` is neither read nor freed by this function.
 #[no_mangle]
 pub unsafe extern "C" fn ddccontrol_caps_parse(
     caps_str: *const c_char,
     caps: *mut CCaps,
     add: c_int,
 ) -> c_int {
-    match catch_unwind(AssertUnwindSafe(|| {
+    catch_unwind(AssertUnwindSafe(|| {
         ddccontrol_caps_parse_inner(caps_str, caps, add)
-    })) {
-        Ok(result) => result,
-        Err(_) => -1,
-    }
+    }))
+    .unwrap_or(-1)
 }
 
 unsafe fn ddccontrol_caps_parse_inner(
@@ -407,7 +423,7 @@ unsafe fn replace_c_caps(caps: *mut CCaps, rust_caps: &Caps) -> bool {
                 if values.is_empty() {
                     (*c_entry).values = ptr::null_mut();
                 } else {
-                    let values_size = values.len() * std::mem::size_of::<c_ushort>();
+                    let values_size = std::mem::size_of_val(values);
                     let c_values = malloc(values_size) as *mut c_ushort;
                     if c_values.is_null() {
                         free(c_entry as *mut c_void);
@@ -446,17 +462,23 @@ mod abi_tests {
 
 mod monitor_db {
     use super::{ddccontrol_caps_parse, free, malloc, CCaps};
-    use encoding_rs::{Encoding, UTF_8};
+    use crate::cbor::{self, Node};
+    use crate::options::{
+        ControlType, OptionControl, OptionGroup, OptionSubgroup, OptionValue, OptionsDb, Refresh,
+    };
+    use crate::xml::{decode_xml_bytes, normalize_xml_document, read_xml_file};
+    use ddccontrol_xml::parse_integer as parse_int;
     use libc::{c_char, c_int, c_uchar, c_ushort, c_void};
-    use roxmltree::{Document, Node};
-    use std::borrow::Cow;
+    use roxmltree::Document;
+    use std::cell::Cell;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::ffi::{CStr, CString};
     use std::fs;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
     use std::path::{Path, PathBuf};
     use std::ptr;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex, MutexGuard};
 
-    const DBVERSION: i64 = 3;
     #[cfg(all(not(test), feature = "gettext"))]
     const DBPACKAGE: &[u8] = b"ddccontrol-db\0";
     const DEFAULT_DATADIR: &str = match option_env!("DDCONTROL_DATADIR") {
@@ -464,11 +486,8 @@ mod monitor_db {
         None => "/usr/local/share/ddccontrol-db",
     };
 
-    const CONTROL_TYPE_VALUE: c_int = 0;
-    const CONTROL_TYPE_COMMAND: c_int = 1;
-    const CONTROL_TYPE_LIST: c_int = 2;
-    const REFRESH_TYPE_NONE: c_int = 0;
-    const REFRESH_TYPE_ALL: c_int = 1;
+    const DBVERSION: i64 = 3;
+
     const INIT_TYPE_UNKNOWN: c_int = 0;
     const INIT_TYPE_STANDARD: c_int = 1;
     const INIT_TYPE_SAMSUNG: c_int = 2;
@@ -526,49 +545,38 @@ mod monitor_db {
         fn dgettext(domainname: *const c_char, msgid: *const c_char) -> *mut c_char;
     }
 
-    static DB_CONTEXT: Mutex<Option<DbContext>> = Mutex::new(None);
+    static DB_CONTEXT: Mutex<Option<Arc<DbContext>>> = Mutex::new(None);
 
     #[derive(Clone)]
     struct DbContext {
-        datadir: PathBuf,
+        profiles: BTreeMap<String, Result<Node, String>>,
         options: OptionsDb,
-    }
-
-    #[derive(Clone, Default)]
-    struct OptionsDb {
-        groups: Vec<OptionGroup>,
+        monitor_file: Option<MonitorFile>,
     }
 
     #[derive(Clone)]
-    struct OptionGroup {
-        name: String,
-        subgroups: Vec<OptionSubgroup>,
+    struct MonitorFile {
+        pnpid: String,
+        root: Node,
     }
 
-    #[derive(Clone)]
-    struct OptionSubgroup {
-        name: String,
-        pattern: Option<String>,
-        controls: Vec<OptionControl>,
+    #[derive(Clone, Copy)]
+    struct LoadMode {
+        faulttolerance: bool,
+        validate_all: bool,
     }
 
-    #[derive(Clone)]
-    struct OptionControl {
-        id: String,
-        name: String,
-        control_type: c_int,
-        refresh: c_int,
-        values: Vec<OptionValue>,
-    }
+    struct ValidationCaps(CCaps);
 
-    #[derive(Clone)]
-    struct OptionValue {
-        id: String,
-        name: Option<String>,
+    impl Drop for ValidationCaps {
+        fn drop(&mut self) {
+            unsafe { super::free_c_vcp_entries(&mut self.0) };
+        }
     }
 
     #[derive(Default)]
     struct MonitorBuild {
+        include_visits: usize,
         name: Option<Vec<u8>>,
         init: c_int,
         groups: Vec<DbGroup>,
@@ -607,6 +615,7 @@ mod monitor_db {
     }
 
     struct MonitorElement {
+        unavailable: bool,
         name: String,
         id: Option<String>,
         line: u32,
@@ -618,6 +627,7 @@ mod monitor_db {
         raw_delay: Option<String>,
         values: Vec<MonitorValue>,
         child_index: usize,
+        unavailable: bool,
     }
 
     struct MonitorValue {
@@ -627,18 +637,44 @@ mod monitor_db {
         line: u32,
     }
 
+    fn db_ffi<T>(failure: T, operation: impl FnOnce() -> T) -> T {
+        catch_unwind(AssertUnwindSafe(|| {
+            #[cfg(test)]
+            compatibility_tests::panic_if_requested();
+            operation()
+        }))
+        .unwrap_or(failure)
+    }
+
+    fn db_context() -> MutexGuard<'static, Option<Arc<DbContext>>> {
+        // Contexts are fully built before publication and never mutated in place.
+        // A panic while holding the lock cannot leave a partially built context.
+        DB_CONTEXT
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Initialize the database, returning 0 on failure, including a Rust panic.
+    ///
+    /// # Safety
+    /// `usedatadir` must be null or point to a readable, NUL-terminated C path
+    /// for the duration of this call. The path is copied, not retained or freed.
     #[no_mangle]
     pub unsafe extern "C" fn ddcci_init_db(usedatadir: *mut c_char) -> c_int {
+        db_ffi(0, || init_db_inner(usedatadir))
+    }
+
+    unsafe fn init_db_inner(usedatadir: *mut c_char) -> c_int {
+        *db_context() = None;
         let datadir = if usedatadir.is_null() {
             PathBuf::from(DEFAULT_DATADIR)
         } else {
             pathbuf_from_c_path(usedatadir)
         };
 
-        *DB_CONTEXT.lock().unwrap() = None;
-        match load_options(&datadir) {
-            Ok(options) => {
-                *DB_CONTEXT.lock().unwrap() = Some(DbContext { datadir, options });
+        match load_context(&datadir) {
+            Ok(context) => {
+                *db_context() = Some(Arc::new(context));
                 1
             }
             Err(err) => {
@@ -662,29 +698,203 @@ mod monitor_db {
         }
     }
 
+    /// Validate and snapshot a monitor definition for this process only.
+    /// Returns 1 on success, 0 on failure without changing the previous override.
+    ///
+    /// # Safety
+    /// `filename` must be a readable, NUL-terminated path. `pnpid` may be null
+    /// or point to at least eight writable bytes; it is written only on success.
+    /// No caller-owned allocation is retained or freed.
     #[no_mangle]
-    pub unsafe extern "C" fn ddcci_release_db() {
-        *DB_CONTEXT.lock().unwrap() = None;
+    pub unsafe extern "C" fn ddcci_set_monitor_file(
+        filename: *const c_char,
+        pnpid: *mut c_char,
+    ) -> c_int {
+        db_ffi(0, || match set_monitor_file_inner(filename) {
+            Ok(id) => {
+                if !pnpid.is_null() {
+                    ptr::copy_nonoverlapping(id.as_ptr().cast::<c_char>(), pnpid, 7);
+                    *pnpid.add(7) = 0;
+                }
+                1
+            }
+            Err(message) => {
+                eprintln!("{message}");
+                0
+            }
+        })
     }
 
+    unsafe fn set_monitor_file_inner(filename: *const c_char) -> Result<String, String> {
+        if filename.is_null() {
+            return Err("A monitor file path is required.".to_string());
+        }
+        let path = pathbuf_from_c_path(filename);
+        let pnpid = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_suffix(".xml"))
+            .filter(|id| {
+                ddccontrol_edid::is_valid_pnp_id(id)
+                    && !id.bytes().any(|byte| byte.is_ascii_lowercase())
+            })
+            .ok_or_else(|| {
+                format!(
+                    "Invalid monitor filename {}: expected a PNP ID such as DEL1234.xml.",
+                    path.display()
+                )
+            })?
+            .to_string();
+        // Keep initialization and publication serialized, while changing only
+        // a private clone until the entire monitor and its includes validate.
+        let mut guard = db_context();
+        let mut context = guard.clone().ok_or_else(|| {
+            "Database must be initialized before loading a monitor file.".to_string()
+        })?;
+        let xml = read_xml_file(&path)
+            .map_err(|err| format!("Cannot access {}: {err}", path.display()))?;
+        Arc::make_mut(&mut context).monitor_file = Some(MonitorFile {
+            pnpid: pnpid.clone(),
+            root: parse_xml(&xml)?,
+        });
+        let mut caps = ValidationCaps(CCaps {
+            vcp: [ptr::null_mut(); 256],
+            monitor_type: 0,
+            raw_caps: ptr::null_mut(),
+        });
+        let mut build = MonitorBuild {
+            groups: groups_from_options(&context.options),
+            ..MonitorBuild::default()
+        };
+        create_db_protected(
+            &context,
+            &mut build,
+            &pnpid,
+            &mut caps.0,
+            0,
+            &mut [false; 256],
+            LoadMode {
+                faulttolerance: false,
+                validate_all: true,
+            },
+        )
+        .map_err(|err| format!("Invalid monitor file {}: {}", path.display(), err.message))?;
+        if build.init == INIT_TYPE_UNKNOWN {
+            return Err(format!(
+                "Invalid monitor file {}: init mode not set.",
+                path.display()
+            ));
+        }
+        *guard = Some(context);
+        Ok(pnpid)
+    }
+
+    /// Return 1 when the current process has an override for exactly `pnpid`.
+    ///
+    /// # Safety
+    /// `pnpid` must be null or point to a readable, NUL-terminated C string.
+    #[no_mangle]
+    pub unsafe extern "C" fn ddcci_monitor_file_matches(pnpid: *const c_char) -> c_int {
+        db_ffi(0, || {
+            if pnpid.is_null() {
+                return 0;
+            }
+            let guard = db_context();
+            let monitor_file = guard
+                .as_ref()
+                .and_then(|context| context.monitor_file.as_ref());
+            c_int::from(
+                monitor_file
+                    .is_some_and(|file| file.pnpid.as_bytes() == CStr::from_ptr(pnpid).to_bytes()),
+            )
+        })
+    }
+
+    /// Release the global database context without unwinding into C.
+    /// Previously returned monitor trees remain owned by their callers.
+    ///
+    /// # Safety
+    /// This function has no pointer preconditions.
+    #[no_mangle]
+    pub unsafe extern "C" fn ddcci_release_db() {
+        db_ffi((), || *db_context() = None);
+    }
+
+    /// Create a C-owned monitor tree, returning null on error or a Rust panic.
+    ///
+    /// # Safety
+    /// Non-null `pnpname` must point to a readable, NUL-terminated C string.
+    /// Non-null `caps` and its entries must be valid and exclusively writable
+    /// for this call; their allocations must use the C allocator. Release a
+    /// returned tree exactly once with `ddcci_free_db`.
     #[no_mangle]
     pub unsafe extern "C" fn ddcci_create_db(
         pnpname: *const c_char,
         caps: *mut CCaps,
         faulttolerance: c_int,
     ) -> *mut CMonitorDb {
+        db_ffi(ptr::null_mut(), || {
+            create_db_inner(pnpname, caps, faulttolerance)
+        })
+    }
+
+    struct StagedCaps(CCaps);
+
+    impl StagedCaps {
+        unsafe fn copy_from(input: *mut CCaps) -> Option<Self> {
+            let mut staged = Self(CCaps {
+                vcp: [ptr::null_mut(); 256],
+                monitor_type: (*input).monitor_type,
+                raw_caps: ptr::null_mut(),
+            });
+            if super::replace_c_caps(&mut staged.0, &super::caps_from_c(input)) {
+                Some(staged)
+            } else {
+                None
+            }
+        }
+
+        unsafe fn publish(&mut self, output: *mut CCaps) {
+            std::mem::swap(&mut self.0.vcp, &mut (*output).vcp);
+            std::mem::swap(&mut self.0.monitor_type, &mut (*output).monitor_type);
+        }
+    }
+
+    impl Drop for StagedCaps {
+        fn drop(&mut self) {
+            unsafe { super::free_c_vcp_entries(&mut self.0) };
+        }
+    }
+
+    unsafe fn create_db_inner(
+        pnpname: *const c_char,
+        caps: *mut CCaps,
+        faulttolerance: c_int,
+    ) -> *mut CMonitorDb {
+        REQUIREMENTS_FAILED.with(|failed| failed.set(false));
         if pnpname.is_null() || caps.is_null() {
             return ptr::null_mut();
         }
 
         let pnpname = CStr::from_ptr(pnpname).to_string_lossy().into_owned();
-        let context = match DB_CONTEXT.lock().unwrap().clone() {
+        let context = match db_context().clone() {
             Some(context) => context,
             None => {
                 eprintln!("Database must be inited before reading a monitor file.");
                 return ptr::null_mut();
             }
         };
+        // Determine fallback safety before interpretation: an ordinary error
+        // can occur before a required operation is visited, or after a required
+        // control was isolated. Neither error may revive it via a generic tree.
+        REQUIREMENTS_FAILED.with(|failed| {
+            failed.set(profile_has_requirements(&context, &pnpname));
+        });
+        let faulttolerance = faulttolerance != 0
+            && !context
+                .monitor_file
+                .as_ref()
+                .is_some_and(|file| file.pnpid == pnpname);
 
         let mut build = MonitorBuild {
             init: INIT_TYPE_UNKNOWN,
@@ -692,26 +902,33 @@ mod monitor_db {
             ..MonitorBuild::default()
         };
         let mut defined = [false; 256];
+        let Some(mut staged_caps) = StagedCaps::copy_from(caps) else {
+            return ptr::null_mut();
+        };
 
         let result = create_db_protected(
             &context,
             &mut build,
             &pnpname,
-            caps,
+            &mut staged_caps.0,
             0,
             &mut defined,
-            faulttolerance != 0,
+            LoadMode {
+                faulttolerance,
+                validate_all: false,
+            },
         );
 
         if let Err(err) = result {
-            if !err.missing_profile || faulttolerance == 0 {
+            REQUIREMENTS_FAILED.with(|failed| failed.set(failed.get() || err.required_feature));
+            if !err.missing_profile || !faulttolerance {
                 eprintln!("{}", err.message);
             }
             return ptr::null_mut();
         }
 
         if build.init == INIT_TYPE_UNKNOWN {
-            if faulttolerance != 0 {
+            if faulttolerance {
                 eprintln!("Warning: init mode not set, using standard.");
                 build.init = INIT_TYPE_STANDARD;
             } else {
@@ -722,34 +939,261 @@ mod monitor_db {
 
         prune_empty_groups(&mut build.groups);
         match alloc_monitor(&build) {
-            Some(monitor) => monitor,
+            Some(monitor) => {
+                staged_caps.publish(caps);
+                REQUIREMENTS_FAILED.with(|failed| failed.set(false));
+                monitor
+            }
             None => ptr::null_mut(),
         }
     }
 
+    /// Free a C-owned monitor tree without unwinding into C.
+    ///
+    /// # Safety
+    /// `monitor` must be null or an exclusively owned, intact tree returned by
+    /// `ddcci_create_db` that has not already been freed.
     #[no_mangle]
     pub unsafe extern "C" fn ddcci_free_db(monitor: *mut CMonitorDb) {
-        free_monitor(monitor);
+        db_ffi((), || free_monitor(monitor));
     }
 
-    fn load_options(datadir: &Path) -> Result<OptionsDb, String> {
-        let path = datadir.join("options.xml");
-        let xml = read_xml_file(&path)
-            .map_err(|err| format!("I/O error while reading options.xml: {err}."))?;
-        let doc =
-            Document::parse(&xml).map_err(|_| "Document not parsed successfully.".to_string())?;
-        let root = doc.root_element();
-        if root.tag_name().name() != "options" {
+    thread_local! {
+        static REQUIREMENTS_FAILED: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// Whether the current thread's last profile load rejected required semantics.
+    /// Call immediately after a failed ddcci_create_db before generic fallback.
+    #[no_mangle]
+    pub extern "C" fn ddcci_db_requirements_failed() -> c_int {
+        REQUIREMENTS_FAILED.with(|failed| c_int::from(failed.get()))
+    }
+
+    fn parse_xml(xml: &str) -> Result<Node, String> {
+        let document = Document::parse(xml)
+            .map_err(|err| format!("Document not parsed successfully: {err}"))?;
+        fn owned(
+            node: roxmltree::Node<'_, '_>,
+            depth: usize,
+            count: &mut usize,
+        ) -> Result<Node, String> {
+            if depth > 64 || *count >= 4_000_000 {
+                return Err("XML database nesting/item limit exceeded.".to_string());
+            }
+            *count += 1;
+            let mut attrs = BTreeMap::new();
+            for attr in node.attributes().filter(|attr| attr.namespace().is_none()) {
+                if attr.name().len() > 1024 * 1024 || attr.value().len() > 1024 * 1024 {
+                    return Err("XML database attribute length limit exceeded.".to_string());
+                }
+                attrs.insert(attr.name().to_string(), attr.value().to_string());
+            }
+            let children = node
+                .children()
+                .filter(|child| child.is_element())
+                .map(|child| owned(child, depth + 1, count))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Node {
+                tag: node.tag_name().name().to_string(),
+                attrs,
+                children,
+                line: node.document().text_pos_at(node.range().start).row,
+                required: false,
+            })
+        }
+        owned(document.root_element(), 0, &mut 0)
+    }
+
+    fn read_xml_snapshot(datadir: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
+        let mut names = vec!["options.xml".to_string()];
+        let directory = fs::read_dir(datadir.join("monitor"))
+            .map_err(|err| format!("Cannot read monitor database directory: {err}"))?;
+        for entry in directory {
+            let entry = entry.map_err(|err| format!("Cannot enumerate monitor profiles: {err}"))?;
+            let name = entry.file_name();
+            if let Some(name) = name.to_str() {
+                if let Some(stem) = name.strip_suffix(".xml") {
+                    if is_valid_monitor_profile_name(stem) {
+                        names.push(format!("monitor/{name}"));
+                    }
+                }
+            }
+        }
+        if names.len() > 65_537 {
+            return Err("Too many monitor database profiles.".to_string());
+        }
+        names.sort();
+        let mut total = 0usize;
+        let mut files = BTreeMap::new();
+        for name in names {
+            let path = datadir.join(&name);
+            let metadata =
+                fs::metadata(&path).map_err(|err| format!("Cannot read {name}: {err}"))?;
+            if metadata.len() > 256 * 1024 * 1024 {
+                return Err(format!("Database source {name} exceeds the size limit."));
+            }
+            let bytes = read_optional(&path)?
+                .ok_or_else(|| format!("Database source {name} disappeared while loading."))?;
+            total = total
+                .checked_add(bytes.len())
+                .ok_or("Database size overflow")?;
+            if total > 256 * 1024 * 1024 {
+                return Err("XML database snapshot exceeds the size limit.".to_string());
+            }
+            files.insert(name, bytes);
+        }
+        Ok(files)
+    }
+
+    fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, String> {
+        match fs::File::open(path) {
+            Ok(mut file) => {
+                use std::io::Read;
+                let before = file
+                    .metadata()
+                    .map_err(|err| format!("Cannot inspect {}: {err}", path.display()))?;
+                let mut bytes = Vec::new();
+                (&mut file)
+                    .take(256 * 1024 * 1024 + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|err| format!("Cannot read {}: {err}", path.display()))?;
+                if bytes.len() > 256 * 1024 * 1024 {
+                    return Err(format!(
+                        "{} exceeds the database size limit.",
+                        path.display()
+                    ));
+                }
+                let after = file
+                    .metadata()
+                    .map_err(|err| format!("Cannot inspect {}: {err}", path.display()))?;
+                if before.len() != after.len() || before.modified().ok() != after.modified().ok() {
+                    return Err(format!(
+                        "{} changed while reading; retry with a new session.",
+                        path.display()
+                    ));
+                }
+                Ok(Some(bytes))
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(format!("Cannot read {}: {err}", path.display())),
+        }
+    }
+
+    fn load_context(datadir: &Path) -> Result<DbContext, String> {
+        if let Some(bytes) = read_optional(&datadir.join("ddccontrol-db.cbor"))? {
+            let database = cbor::decode(&bytes)
+                .map_err(|err| format!("Invalid or unsupported CBOR database: {err}; XML fallback is disabled for present CBOR."))?;
+            return Ok(DbContext {
+                monitor_file: None,
+                options: load_options_node(&database.options)?,
+                profiles: database
+                    .profiles
+                    .into_iter()
+                    .map(|(id, node)| (id, Ok(node)))
+                    .collect(),
+            });
+        }
+        let manifest = read_optional(&datadir.join("ddccontrol-db.snapshot"))?;
+        let files = read_xml_snapshot(datadir)?;
+        // Pin one complete revision before exposing the session. A concurrent
+        // package replacement is detected by source bytes and profile-name set.
+        if files != read_xml_snapshot(datadir)?
+            || manifest != read_optional(&datadir.join("ddccontrol-db.snapshot"))?
+        {
+            return Err(
+                "XML database changed while loading; retry with a new session.".to_string(),
+            );
+        }
+        if let Some(manifest) = manifest {
+            cbor::verify_manifest(&manifest, &files)?;
+        }
+        let options_xml =
+            normalize_xml_document(decode_xml_bytes(&files["options.xml"]).into_owned());
+        let options = load_options_node(&parse_xml(&options_xml)?)?;
+        let profiles = files
+            .into_iter()
+            .filter_map(|(path, bytes)| {
+                let id = path
+                    .strip_prefix("monitor/")?
+                    .strip_suffix(".xml")?
+                    .to_string();
+                let xml = normalize_xml_document(decode_xml_bytes(&bytes).into_owned());
+                Some((id, parse_xml(&xml)))
+            })
+            .collect();
+        Ok(DbContext {
+            options,
+            profiles,
+            monitor_file: None,
+        })
+    }
+
+    fn has_required(node: &Node) -> bool {
+        node.required || node.children.iter().any(has_required)
+    }
+
+    fn profile_has_requirements(context: &DbContext, pnpname: &str) -> bool {
+        let shared: BTreeSet<_> = context
+            .options
+            .controls()
+            .filter(|control| control.unavailable)
+            .map(|control| control.id.as_str())
+            .collect();
+        let mut pending = vec![(pnpname, true)];
+        let mut visited = BTreeSet::new();
+        while let Some((id, top_level)) = pending.pop() {
+            // The explicit override and an include of the same ID refer to
+            // different roots. Visit each installed profile at most once.
+            if !visited.insert((id, top_level)) {
+                continue;
+            }
+            let root = context
+                .monitor_file
+                .as_ref()
+                .filter(|file| top_level && file.pnpid == id)
+                .map(|file| &file.root)
+                .or_else(|| context.profiles.get(id).and_then(|root| root.as_ref().ok()));
+            let Some(root) = root else { continue };
+            if has_required(root) {
+                return true;
+            }
+            for child in &root.children {
+                if child.tag == "include" {
+                    if let Some(id) = child.attr("file") {
+                        pending.push((id, false));
+                    }
+                } else if child.tag == "controls"
+                    && child.children.iter().any(|control| {
+                        control.tag == "control"
+                            && control.attr("id").is_some_and(|id| shared.contains(id))
+                    })
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn load_options_node(root: &Node) -> Result<OptionsDb, String> {
+        if root.required
+            || root
+                .children
+                .iter()
+                .any(|child| child.tag != "group" && has_required(child))
+        {
+            return Err("Options require an unsupported database feature.".to_string());
+        }
+        if root.tag != "options" {
             return Err(format!(
                 "options.xml of the wrong type, root node {} != options",
-                root.tag_name().name()
+                root.tag
             ));
         }
-
-        let version = root.attribute("dbversion").ok_or_else(|| {
+        let version = root.attr("dbversion").ok_or_else(|| {
             "options.xml dbversion attribute missing, please update your database.".to_string()
         })?;
-        let _date = root.attribute("date").ok_or_else(|| {
+        let _date = root.attr("date").ok_or_else(|| {
             "options.xml date attribute missing, please update your database.".to_string()
         })?;
         let version =
@@ -766,28 +1210,57 @@ mod monitor_db {
         }
 
         let mut options = OptionsDb::default();
-        for group in element_children(root).filter(|node| node.tag_name().name() == "group") {
+        for group in element_children(root).filter(|node| node.tag.as_str() == "group") {
+            if group.required
+                || group
+                    .children
+                    .iter()
+                    .any(|child| child.tag != "subgroup" && has_required(child))
+            {
+                return Err("Options group requires an unsupported feature.".to_string());
+            }
             let name = required_attr(group, "name")?.to_string();
             let mut option_group = OptionGroup {
                 name,
                 subgroups: Vec::new(),
             };
-            for subgroup in
-                element_children(group).filter(|node| node.tag_name().name() == "subgroup")
-            {
+            for subgroup in element_children(group).filter(|node| node.tag.as_str() == "subgroup") {
+                if subgroup.required
+                    || subgroup
+                        .children
+                        .iter()
+                        .any(|child| child.tag != "control" && has_required(child))
+                {
+                    return Err("Options subgroup requires an unsupported feature.".to_string());
+                }
                 let name = required_attr(subgroup, "name")?.to_string();
-                let pattern = subgroup.attribute("pattern").map(ToString::to_string);
+                let pattern = subgroup.attr("pattern").map(ToString::to_string);
                 let mut option_subgroup = OptionSubgroup {
                     name,
                     pattern,
                     controls: Vec::new(),
                 };
                 for control in
-                    element_children(subgroup).filter(|node| node.tag_name().name() == "control")
+                    element_children(subgroup).filter(|node| node.tag.as_str() == "control")
                 {
-                    let refresh = match control.attribute("refresh") {
-                        Some("none") | None => REFRESH_TYPE_NONE,
-                        Some("all") => REFRESH_TYPE_ALL,
+                    if has_required(control) {
+                        // Unknown semantics need no interpretation of type,
+                        // refresh, names or values. Retain only the identity
+                        // needed to suppress references at profile assembly.
+                        option_subgroup.controls.push(OptionControl {
+                            id: required_attr(control, "id")?.to_string(),
+                            name: String::new(),
+                            control_type: ControlType::Value,
+                            refresh: Refresh::None,
+                            values: Vec::new(),
+                            unavailable: true,
+                            raw_address: None,
+                        });
+                        continue;
+                    }
+                    let refresh = match control.attr("refresh") {
+                        Some("none") | None => Refresh::None,
+                        Some("all") => Refresh::All,
                         Some(_) => {
                             return Err(node_error(
                                 control,
@@ -796,9 +1269,9 @@ mod monitor_db {
                         }
                     };
                     let control_type = match required_attr(control, "type")? {
-                        "value" => CONTROL_TYPE_VALUE,
-                        "command" => CONTROL_TYPE_COMMAND,
-                        "list" => CONTROL_TYPE_LIST,
+                        "value" => ControlType::Value,
+                        "command" => ControlType::Command,
+                        "list" => ControlType::List,
                         _ => return Err(node_error(control, "Invalid type.")),
                     };
                     let mut option_control = OptionControl {
@@ -807,13 +1280,16 @@ mod monitor_db {
                         control_type,
                         refresh,
                         values: Vec::new(),
+                        unavailable: has_required(control),
+                        raw_address: control.attr("address").map(ToString::to_string),
                     };
                     for value in
-                        element_children(control).filter(|node| node.tag_name().name() == "value")
+                        element_children(control).filter(|node| node.tag.as_str() == "value")
                     {
                         option_control.values.push(OptionValue {
                             id: required_attr(value, "id")?.to_string(),
-                            name: value.attribute("name").map(ToString::to_string),
+                            name: value.attr("name").map(ToString::to_string),
+                            raw_value: value.attr("value").map(ToString::to_string),
                         });
                     }
                     option_subgroup.controls.push(option_control);
@@ -833,12 +1309,18 @@ mod monitor_db {
         caps: *mut CCaps,
         recursionlevel: usize,
         defined: &mut [bool; 256],
-        faulttolerance: bool,
+        mode: LoadMode,
     ) -> Result<(), DbError> {
         if !is_valid_monitor_profile_name(pnpname) {
             return Err(DbError::new(format!(
                 "Invalid monitor profile name ({pnpname})."
             )));
+        }
+        build.include_visits += 1;
+        if build.include_visits > 1_000_000 {
+            return Err(DbError::new(
+                "Expanded include visit limit exceeded.".to_string(),
+            ));
         }
         if recursionlevel > 15 {
             return Err(DbError::new(format!(
@@ -846,56 +1328,58 @@ mod monitor_db {
             )));
         }
 
-        let path = context
-            .datadir
-            .join("monitor")
-            .join(format!("{pnpname}.xml"));
-        let xml = match read_xml_file(&path) {
-            Ok(xml) => xml,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                return Err(DbError::missing(format!(
-                    "Cannot access {}: {err}",
-                    path.display()
-                )));
-            }
-            Err(err) => {
-                return Err(DbError::new(format!(
-                    "Cannot access {}: {err}",
-                    path.display()
-                )));
-            }
+        let root = if let Some(file) = context
+            .monitor_file
+            .as_ref()
+            .filter(|file| recursionlevel == 0 && file.pnpid == pnpname)
+        {
+            &file.root
+        } else {
+            context
+                .profiles
+                .get(pnpname)
+                .ok_or_else(|| {
+                    DbError::missing(format!("Monitor profile {pnpname} is unavailable."))
+                })?
+                .as_ref()
+                .map_err(|error| DbError::new(error.clone()))?
         };
-        let doc = Document::parse(&xml)
-            .map_err(|_| DbError::new("Document not parsed successfully.".to_string()))?;
-        let root = doc.root_element();
-        if root.tag_name().name() != "monitor" {
+        if root.required {
+            return Err(DbError::required(format!(
+                "Monitor profile {pnpname} requires an unsupported feature."
+            )));
+        }
+        if root.tag.as_str() != "monitor" {
             return Err(DbError::new(format!(
                 "monitor/{pnpname}.xml of the wrong type, root node {} != monitor",
-                root.tag_name().name()
+                root.tag.as_str()
             )));
         }
 
         if build.name.is_none() {
             build.name = Some(
-                root.attribute("name")
+                root.attr("name")
                     .ok_or_else(|| DbError::new(node_error(root, "Can't find name property.")))?
                     .as_bytes()
                     .to_vec(),
             );
         }
 
-        if build.init == INIT_TYPE_UNKNOWN {
-            if let Some(init) = root.attribute("init") {
-                build.init = match init {
+        if build.init == INIT_TYPE_UNKNOWN || mode.validate_all {
+            if let Some(init) = root.attr("init") {
+                let init = match init {
                     "standard" => INIT_TYPE_STANDARD,
                     "samsung" => INIT_TYPE_SAMSUNG,
                     _ => return Err(DbError::new(node_error(root, "Invalid type."))),
                 };
+                if build.init == INIT_TYPE_UNKNOWN {
+                    build.init = init;
+                }
             }
         }
 
-        if root.attribute("caps").is_some() {
-            if faulttolerance {
+        if root.attr("caps").is_some() {
+            if mode.faulttolerance {
                 eprintln!("Warning: caps property is deprecated.");
             } else {
                 return Err(DbError::new(
@@ -903,8 +1387,8 @@ mod monitor_db {
                 ));
             }
         }
-        if root.attribute("include").is_some() {
-            if faulttolerance {
+        if root.attr("include").is_some() {
+            if mode.faulttolerance {
                 eprintln!("Warning: include property is deprecated.");
             } else {
                 return Err(DbError::new(
@@ -916,10 +1400,16 @@ mod monitor_db {
         let mut controls_or_include = false;
         let mut seen_controls = false;
         for child in element_children(root) {
-            match child.tag_name().name() {
+            if child.required || (child.tag != "controls" && has_required(child)) {
+                return Err(DbError::required(node_error(
+                    child,
+                    "Profile operation requires an unsupported feature.",
+                )));
+            }
+            match child.tag.as_str() {
                 "caps" => {
-                    let remove = child.attribute("remove");
-                    let add = child.attribute("add");
+                    let remove = child.attr("remove");
+                    let add = child.attr("add");
                     if remove.is_none() && add.is_none() {
                         return Err(DbError::new(node_error(
                             child,
@@ -945,7 +1435,7 @@ mod monitor_db {
                         caps,
                         recursionlevel + 1,
                         defined,
-                        faulttolerance,
+                        mode,
                     )?;
                 }
                 "controls" => {
@@ -957,6 +1447,33 @@ mod monitor_db {
                     }
                     seen_controls = true;
                     controls_or_include = true;
+                    if child
+                        .children
+                        .iter()
+                        .any(|node| node.tag != "control" && has_required(node))
+                    {
+                        return Err(DbError::required(
+                            "Unknown required controls operation.".to_string(),
+                        ));
+                    }
+                    // An unknown required control can have an ID absent from
+                    // options. Reserve its wire address before matching IDs;
+                    // otherwise a generic include could expose that operation.
+                    for control in &child.children {
+                        if has_required(control) {
+                            let address = control
+                                .attr("address")
+                                .and_then(|raw| parse_int(raw).ok())
+                                .and_then(|value| u8::try_from(value).ok())
+                                .ok_or_else(|| {
+                                    DbError::required(
+                                        "Required control cannot be safely isolated by address."
+                                            .to_string(),
+                                    )
+                                })?;
+                            suppress_address(build, defined, address);
+                        }
+                    }
                     let monitor_controls = parse_monitor_controls(child).map_err(DbError::new)?;
                     add_controls_from_options(
                         build,
@@ -964,8 +1481,11 @@ mod monitor_db {
                         &monitor_controls,
                         caps,
                         defined,
-                        faulttolerance,
+                        mode,
                     )?;
+                }
+                _ if mode.validate_all => {
+                    return Err(DbError::new(node_error(child, "Unknown monitor element.")));
                 }
                 _ => {}
             }
@@ -980,15 +1500,47 @@ mod monitor_db {
         Ok(())
     }
 
+    fn suppress_address(build: &mut MonitorBuild, defined: &mut [bool; 256], address: u8) {
+        defined[address as usize] = true;
+        for group in &mut build.groups {
+            for subgroup in &mut group.subgroups {
+                subgroup
+                    .controls
+                    .retain(|control| control.address != address);
+            }
+        }
+    }
+
     fn add_controls_from_options(
         build: &mut MonitorBuild,
         options: &OptionsDb,
         monitor_controls: &ParsedMonitorControls,
         caps: *mut CCaps,
         defined: &mut [bool; 256],
-        faulttolerance: bool,
+        mode: LoadMode,
     ) -> Result<(), DbError> {
-        let mut matched = vec![false; monitor_controls.elements.len()];
+        let mut matched: Vec<bool> = monitor_controls
+            .elements
+            .iter()
+            .map(|element| element.unavailable)
+            .collect();
+        for monitor_control in &monitor_controls.controls {
+            let blocked = options
+                .groups
+                .iter()
+                .flat_map(|group| &group.subgroups)
+                .flat_map(|subgroup| &subgroup.controls)
+                .any(|control| control.id == monitor_control.id && control.unavailable);
+            if blocked {
+                let address = monitor_control_address(monitor_control).map_err(|_| {
+                    DbError::required(
+                        "Required shared control cannot be safely isolated by address.".to_string(),
+                    )
+                })?;
+                suppress_address(build, defined, address);
+                matched[monitor_control.child_index] = true;
+            }
+        }
 
         for (group_index, option_group) in options.groups.iter().enumerate() {
             for (subgroup_index, option_subgroup) in option_group.subgroups.iter().enumerate() {
@@ -1002,19 +1554,24 @@ mod monitor_db {
                     };
 
                     matched[monitor_control.child_index] = true;
+                    if monitor_control.unavailable || option_control.unavailable {
+                        continue;
+                    }
                     let address = monitor_control_address(monitor_control)? as usize;
-                    unsafe {
-                        if (*caps).vcp[address].is_null() {
+                    if !mode.validate_all {
+                        unsafe {
+                            if (*caps).vcp[address].is_null() {
+                                continue;
+                            }
+                        }
+                        if defined[address] {
                             continue;
                         }
                     }
-                    if defined[address] {
-                        continue;
-                    }
 
                     let mut values =
-                        get_value_list(option_control, monitor_control, faulttolerance)?;
-                    if option_control.control_type == CONTROL_TYPE_COMMAND && values.is_empty() {
+                        get_value_list(option_control, monitor_control, mode.faulttolerance)?;
+                    if option_control.control_type == ControlType::Command && values.is_empty() {
                         values.push(DbValue {
                             id: "default".to_string(),
                             name: translate(&option_control.name),
@@ -1027,8 +1584,8 @@ mod monitor_db {
                         name: translate(&option_control.name),
                         address: address as u8,
                         delay: monitor_control_delay(monitor_control)?,
-                        control_type: option_control.control_type,
-                        refresh: option_control.refresh,
+                        control_type: option_control.control_type as c_int,
+                        refresh: option_control.refresh as c_int,
                         values,
                     };
                     build.groups[group_index].subgroups[subgroup_index]
@@ -1047,7 +1604,7 @@ mod monitor_db {
                     control.id.as_deref().unwrap_or("(null)"),
                     control.line
                 );
-                if !faulttolerance {
+                if !mode.faulttolerance {
                     return Err(DbError::new(
                         "Unmatched control in monitor XML.".to_string(),
                     ));
@@ -1056,94 +1613,6 @@ mod monitor_db {
         }
 
         Ok(())
-    }
-
-    fn read_xml_file(path: &Path) -> std::io::Result<String> {
-        let bytes = fs::read(path)?;
-        Ok(normalize_xml_document(
-            decode_xml_bytes(&bytes).into_owned(),
-        ))
-    }
-
-    fn decode_xml_bytes(bytes: &[u8]) -> Cow<'_, str> {
-        let encoding = xml_declared_encoding(bytes).unwrap_or(UTF_8);
-        let (decoded, _, _) = encoding.decode(bytes);
-        decoded
-    }
-
-    fn normalize_xml_document(xml: String) -> String {
-        let mut cursor = 0;
-        loop {
-            cursor += xml[cursor..]
-                .find(|ch: char| !ch.is_whitespace())
-                .unwrap_or(xml.len() - cursor);
-            if !xml[cursor..].starts_with("<!--") {
-                break;
-            }
-            let Some(comment_end) = xml[cursor + 4..].find("-->") else {
-                return xml;
-            };
-            cursor += 4 + comment_end + 3;
-        }
-
-        if cursor > 0 && xml[cursor..].starts_with("<?xml") {
-            xml[cursor..].to_string()
-        } else {
-            xml
-        }
-    }
-
-    fn xml_declared_encoding(bytes: &[u8]) -> Option<&'static Encoding> {
-        let declaration_start = xml_declaration_start(bytes)?;
-        let prefix = &bytes[declaration_start..];
-        let prefix = &prefix[..prefix.len().min(256)];
-        let declaration_end = prefix
-            .windows(2)
-            .position(|window| window == b"?>")
-            .unwrap_or(prefix.len());
-        let declaration = &prefix[..declaration_end];
-        let encoding_index = declaration
-            .windows("encoding".len())
-            .position(|window| window == b"encoding")?;
-        let after_encoding = &declaration[encoding_index + "encoding".len()..];
-        let after_encoding = trim_ascii_bytes_start(after_encoding);
-        let after_equals = trim_ascii_bytes_start(after_encoding.strip_prefix(b"=")?);
-        let quote = after_equals.first().copied()?;
-        if quote != b'\'' && quote != b'"' {
-            return None;
-        }
-        let label_end = after_equals[1..]
-            .iter()
-            .position(|byte| *byte == quote)
-            .map(|index| index + 1)?;
-        Encoding::for_label(&after_equals[1..label_end])
-    }
-
-    fn xml_declaration_start(bytes: &[u8]) -> Option<usize> {
-        let mut cursor = 0;
-        loop {
-            cursor += bytes[cursor..]
-                .iter()
-                .position(|byte| !byte.is_ascii_whitespace())?;
-            if bytes[cursor..].starts_with(b"<?xml") {
-                return Some(cursor);
-            }
-            if !bytes[cursor..].starts_with(b"<!--") {
-                return None;
-            }
-            let comment_end = bytes[cursor + 4..]
-                .windows(3)
-                .position(|window| window == b"-->")?;
-            cursor += 4 + comment_end + 3;
-        }
-    }
-
-    fn trim_ascii_bytes_start(input: &[u8]) -> &[u8] {
-        let start = input
-            .iter()
-            .position(|byte| !byte.is_ascii_whitespace())
-            .unwrap_or(input.len());
-        &input[start..]
     }
 
     fn monitor_control_address(monitor_control: &MonitorControl) -> Result<u8, DbError> {
@@ -1164,8 +1633,12 @@ mod monitor_db {
     fn monitor_control_delay(monitor_control: &MonitorControl) -> Result<c_int, DbError> {
         match monitor_control.raw_delay.as_deref() {
             Some(delay) => parse_int_decimal(delay)
-                .map(|delay| delay as c_int)
-                .map_err(|_| DbError::new("Can't convert delay to int.".to_string())),
+                .map_err(|_| DbError::new("Can't convert delay to int.".to_string()))
+                .and_then(|delay| {
+                    c_int::try_from(delay).map_err(|_| {
+                        DbError::new("Delay is outside the signed 32-bit range.".to_string())
+                    })
+                }),
             None => Ok(-1),
         }
     }
@@ -1200,7 +1673,7 @@ mod monitor_db {
                         "Value is outside the supported 0-65535 range.".to_string(),
                     ));
                 }
-                let name = if option_control.control_type == CONTROL_TYPE_COMMAND {
+                let name = if option_control.control_type == ControlType::Command {
                     option_value
                         .name
                         .as_ref()
@@ -1237,33 +1710,35 @@ mod monitor_db {
         Ok(values)
     }
 
-    fn parse_monitor_controls(node: Node<'_, '_>) -> Result<ParsedMonitorControls, String> {
+    fn parse_monitor_controls(node: &Node) -> Result<ParsedMonitorControls, String> {
         let mut controls = Vec::new();
         let mut elements = Vec::new();
         for (child_index, control) in element_children(node).enumerate() {
             elements.push(MonitorElement {
-                name: control.tag_name().name().to_string(),
-                id: control.attribute("id").map(ToString::to_string),
+                unavailable: has_required(control),
+                name: control.tag.as_str().to_string(),
+                id: control.attr("id").map(ToString::to_string),
                 line: line(control),
             });
-            if control.tag_name().name() != "control" {
+            if control.tag.as_str() != "control" {
                 continue;
             }
-            let Some(id) = control.attribute("id") else {
+            let Some(id) = control.attr("id") else {
                 continue;
             };
             let mut monitor_control = MonitorControl {
                 id: id.to_string(),
-                raw_address: control.attribute("address").map(ToString::to_string),
-                raw_delay: control.attribute("delay").map(ToString::to_string),
+                raw_address: control.attr("address").map(ToString::to_string),
+                raw_delay: control.attr("delay").map(ToString::to_string),
                 values: Vec::new(),
                 child_index,
+                unavailable: has_required(control),
             };
             for value in element_children(control) {
                 monitor_control.values.push(MonitorValue {
-                    element_name: value.tag_name().name().to_string(),
-                    id: value.attribute("id").map(ToString::to_string),
-                    raw_value: value.attribute("value").map(ToString::to_string),
+                    element_name: value.tag.as_str().to_string(),
+                    id: value.attr("id").map(ToString::to_string),
+                    raw_value: value.attr("value").map(ToString::to_string),
                     line: line(value),
                 });
             }
@@ -1603,7 +2078,7 @@ mod monitor_db {
     fn translate(input: &str) -> Vec<u8> {
         #[cfg(test)]
         {
-            return input.as_bytes().to_vec();
+            input.as_bytes().to_vec()
         }
 
         #[cfg(all(not(test), not(feature = "gettext")))]
@@ -1627,42 +2102,21 @@ mod monitor_db {
         }
     }
 
-    fn required_attr<'a, 'd>(node: Node<'a, 'd>, name: &str) -> Result<&'a str, String> {
-        node.attribute(name)
+    fn required_attr<'a>(node: &'a Node, name: &str) -> Result<&'a str, String> {
+        node.attr(name)
             .ok_or_else(|| node_error(node, &format!("Can't find {name} property.")))
     }
 
-    fn element_children<'a, 'd>(node: Node<'a, 'd>) -> impl Iterator<Item = Node<'a, 'd>> {
-        node.children().filter(|child| child.is_element())
+    fn element_children(node: &Node) -> impl Iterator<Item = &Node> {
+        node.children.iter()
     }
 
-    fn node_error(node: Node<'_, '_>, message: &str) -> String {
+    fn node_error(node: &Node, message: &str) -> String {
         format!("Error: {message} @line {}", line(node))
     }
 
-    fn line(node: Node<'_, '_>) -> u32 {
-        node.document().text_pos_at(node.range().start).row
-    }
-
-    fn parse_int(input: &str) -> Result<i64, std::num::ParseIntError> {
-        let input = trim_ascii_start(input);
-        let (negative, rest) = if let Some(rest) = input.strip_prefix('-') {
-            (true, rest)
-        } else if let Some(rest) = input.strip_prefix('+') {
-            (false, rest)
-        } else {
-            (false, input)
-        };
-        let (radix, digits) =
-            if let Some(rest) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
-                (16, rest)
-            } else if rest.len() > 1 && rest.starts_with('0') {
-                (8, &rest[1..])
-            } else {
-                (10, rest)
-            };
-        let value = i64::from_str_radix(digits, radix)?;
-        Ok(if negative { -value } else { value })
+    fn line(node: &Node) -> u32 {
+        node.line
     }
 
     fn parse_int_decimal(input: &str) -> Result<i64, std::num::ParseIntError> {
@@ -1694,13 +2148,23 @@ mod monitor_db {
     struct DbError {
         message: String,
         missing_profile: bool,
+        required_feature: bool,
     }
 
     impl DbError {
+        fn required(message: String) -> Self {
+            Self {
+                message,
+                missing_profile: false,
+                required_feature: true,
+            }
+        }
+
         fn new(message: String) -> Self {
             Self {
                 message,
                 missing_profile: false,
+                required_feature: false,
             }
         }
 
@@ -1708,6 +2172,7 @@ mod monitor_db {
             Self {
                 message,
                 missing_profile: true,
+                required_feature: false,
             }
         }
     }

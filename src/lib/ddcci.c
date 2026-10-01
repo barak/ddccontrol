@@ -40,8 +40,10 @@
 #include <sys/stat.h>
 
 #include "ddcci.h"
+#include "ddcci_protocol.h"
 #include "internal.h"
 #include "rust_ffi.h"
+#include "monitor_db_internal.h"
 
 #include "conf.h"
 
@@ -52,12 +54,10 @@ extern int ddccontrol_caps_parse(const char *caps_str, struct caps *caps, int ad
 #define DEFAULT_EDID_ADDR	0x50	/* edid sits at 0x50 */
 
 #define DDCCI_COMMAND_READ	0x01	/* read ctrl value */
-#define DDCCI_REPLY_READ	0x02	/* read ctrl value reply */
 #define DDCCI_COMMAND_WRITE	0x03	/* write ctrl value */
 
 #define DDCCI_COMMAND_SAVE	0x0c	/* save current settings */
 
-#define DDCCI_REPLY_CAPS	0xe3	/* get monitor caps reply */
 #define DDCCI_COMMAND_CAPS	0xf3	/* get monitor caps */
 #define DDCCI_COMMAND_PRESENCE	0xf7	/* ACCESS.bus presence check */
 
@@ -70,15 +70,9 @@ extern int ddccontrol_caps_parse(const char *caps_str, struct caps *caps, int ad
 #define DDCCI_CTRL_DISABLE	0x0000
 
 /* ddc/ci iface tunables */
-#define MAX_BYTES		127	/* max message length */
 #define DELAY   		45000	/* uS to wait after write */
 
 #define CONTROL_WRITE_DELAY   80000	/* uS to wait after writing to a control (default) */
-
-/* magic numbers */
-#define MAGIC_1	0x51	/* first byte to send, host address */
-#define MAGIC_2	0x80	/* second byte to send, ored with length */
-#define MAGIC_XOR 0x50	/* initial xor for received frame */
 
 /* verbosity level (0 - normal, 1 - encoded data, 2 - ddc/ci frames) */
 static int verbosity = 0;
@@ -270,89 +264,62 @@ static void ddcci_delay(struct monitor* mon, int iswrite)
 
 /* write len bytes (stored in buf) to ddc/ci at address addr */
 /* return 0 on success, -1 on failure */
-static int ddcci_write(struct monitor* mon, unsigned char *buf, unsigned char len)
+static int ddcci_write(struct monitor* mon, const unsigned char *buf, size_t len)
 {
-	int i = 0;
-	unsigned char _buf[MAX_BYTES + 3];
-	unsigned xor = ((unsigned char)mon->addr << 1);	/* initial xor value */
-
-	/* put first magic */
-	xor ^= (_buf[i++] = MAGIC_1);
-	
-	/* second magic includes message size */
-	xor ^= (_buf[i++] = MAGIC_2 | len);
-	
-	while (len--) /* bytes to send */
-		xor ^= (_buf[i++] = *buf++);
-		
-	/* finally put checksum */
-	_buf[i++] = xor;
+	unsigned char frame[DDCCI_MAX_FRAME_LEN];
+	int frame_len = ddccontrol_ddcci_build_frame(mon->addr, buf, len,
+		frame, sizeof(frame));
+	if (frame_len < 0)
+		return -1;
 
 	/* wait for previous command to complete */
 	ddcci_delay(mon, 1);
 
-	return i2c_write(mon, mon->addr, _buf, i);
+	return i2c_write(mon, mon->addr, frame, (unsigned char)frame_len);
 }
 
 /* read ddc/ci formatted frame from ddc/ci at address addr, to buf */
-static int ddcci_read(struct monitor* mon, unsigned char *buf, unsigned char len)
+static int ddcci_read(struct monitor* mon, unsigned char *buf, size_t len)
 {
-	unsigned char _buf[MAX_BYTES];
-	unsigned char xor = MAGIC_XOR;
-	int i, _len;
+	unsigned char frame[DDCCI_MAX_FRAME_LEN];
+	int read_len, payload_len, missing_length_flag;
+	int frame_len = ddccontrol_ddcci_frame_length(len);
+	if (frame_len < 0 || !buf)
+		return -1;
 
 	/* wait for previous command to complete */
 	ddcci_delay(mon, 0);
 
-	if (i2c_read(mon, mon->addr, _buf, len + 3) <= 0) /* busy ??? */
-	{
+	read_len = i2c_read(mon, mon->addr, frame, (unsigned char)frame_len);
+	if (read_len <= 0)
 		return -1;
-	}
-	
-	/* validate answer */
-	if (_buf[0] != mon->addr * 2) { /* busy ??? */
+	payload_len = ddccontrol_ddcci_parse_frame(mon->addr, frame, (size_t)read_len,
+		buf, len, &missing_length_flag);
+	if (payload_len < 0) {
 		if (!mon->probing || verbosity) {
-			fprintf(stderr, _("Invalid response, first byte is 0x%02x, should be 0x%02x\n"),
-				_buf[0], mon->addr * 2);
-			dumphex(stderr, NULL, _buf, len + 3);
+			switch (payload_len) {
+			case DDCCI_PROTOCOL_ADDRESS:
+				fprintf(stderr, _("Invalid response, first byte is 0x%02x, should be 0x%02x\n"),
+					frame[0], mon->addr * 2);
+				break;
+			case DDCCI_PROTOCOL_LENGTH:
+				fprintf(stderr, _("Invalid response, truncated frame or invalid length.\n"));
+				break;
+			case DDCCI_PROTOCOL_CHECKSUM:
+				fprintf(stderr, _("Invalid response, corrupted data.\n"));
+				break;
+			default:
+				fprintf(stderr, _("Invalid DDC/CI response.\n"));
+				break;
+			}
+			dumphex(stderr, NULL, frame, read_len);
 		}
 		return -1;
 	}
 
-	if ((_buf[1] & MAGIC_2) == 0) {
-		/* Fujitsu Siemens P19-2 and NEC LCD 1970NX send wrong magic when reading caps. */
-		if (!mon->probing || verbosity) {
-			fprintf(stderr, _("Non-fatal error: Invalid response, magic is 0x%02x\n"), _buf[1]);
-		}
-	}
-
-	_len = _buf[1] & ~MAGIC_2;
-	if (_len > len || _len > (int)sizeof(_buf)) {
-		if (!mon->probing || verbosity) {
-			fprintf(stderr, _("Invalid response, length is %d, should be %d at most\n"),
-				_len, len);
-		}
-		return -1;
-	}
-
-	/* get the xor value */
-	for (i = 0; i < _len + 3; i++) {
-		xor ^= _buf[i];
-	}
-	
-	if (xor != 0) {
-		if (!mon->probing || verbosity) {
-			fprintf(stderr, _("Invalid response, corrupted data - xor is 0x%02x, length 0x%02x\n"), xor, _len);
-			dumphex(stderr, NULL, _buf, len + 3);
-		}
-		
-		return -1;
-	}
-
-	/* copy payload data */
-	memcpy(buf, _buf + 2, _len);
-		
-	return _len;
+	if (missing_length_flag && (!mon->probing || verbosity))
+		fprintf(stderr, _("Non-fatal error: Invalid response, magic is 0x%02x\n"), frame[1]);
+	return payload_len;
 }
 
 /* write value to register ctrl of ddc/ci at address addr */
@@ -385,7 +352,7 @@ int ddcci_writectrl(struct monitor* mon, unsigned char ctrl, unsigned short valu
 
 /* read register ctrl raw data of ddc/ci at address addr */
 static int ddcci_raw_readctrl(struct monitor* mon, 
-	unsigned char ctrl, unsigned char *buf, unsigned char len)
+	unsigned char ctrl, unsigned char *buf, size_t len)
 {
 	unsigned char _buf[2];
 
@@ -411,21 +378,9 @@ int ddcci_readctrl(struct monitor* mon, unsigned char ctrl,
 
 	int len = ddcci_raw_readctrl(mon, ctrl, buf, sizeof(buf));
 	
-	if (len == sizeof(buf) && buf[0] == DDCCI_REPLY_READ &&	buf[2] == ctrl) 
-	{	
-		if (value) {
-			*value = buf[6] * 256 + buf[7];
-		}
-		
-		if (maximum) {
-			*maximum = buf[4] * 256 + buf[5];
-		}
-		
-		return !buf[1];
-		
-	}
-	
-	return -1;
+	if (len < 0)
+		return -1;
+	return ddccontrol_ddcci_parse_vcp(buf, (size_t)len, ctrl, value, maximum);
 }
 
 /* See documentation Appendix D.
@@ -441,7 +396,7 @@ int ddcci_parse_caps(const char* caps_str, struct caps* caps, int add)
 }
 
 /* read capabilities raw data of ddc/ci at address addr starting at offset to buf */
-static int ddcci_raw_caps(struct monitor* mon, unsigned int offset, unsigned char *buf, unsigned char len)
+static int ddcci_raw_caps(struct monitor* mon, unsigned int offset, unsigned char *buf, size_t len)
 {
 	unsigned char _buf[3];
 
@@ -457,6 +412,40 @@ static int ddcci_raw_caps(struct monitor* mon, unsigned int offset, unsigned cha
 	return ddcci_read(mon, buf, len);
 }
 
+/* Mask binary payloads before passing the NUL-terminated text to Rust. The
+ * received byte count, not strlen(), bounds payloads that may contain NULs. */
+static int ddcci_normalize_caps(char *raw_caps, size_t length)
+{
+	size_t pos = 0;
+
+	while (pos < length && raw_caps[pos] != '\0') {
+		char *number, *endptr;
+		long binary_len;
+		size_t payload, remaining;
+
+		if (length - pos < 4 || memcmp(raw_caps + pos, "bin(", 4) != 0) {
+			pos++;
+			continue;
+		}
+
+		number = raw_caps + pos + 4;
+		errno = 0;
+		binary_len = strtol(number, &endptr, 0);
+		if (errno == ERANGE || endptr == number || binary_len < 0 || *endptr != '(')
+			return -1;
+
+		payload = (size_t)(endptr - raw_caps) + 1;
+		remaining = length - payload;
+		if ((unsigned long)binary_len > remaining)
+			return -1;
+		pos = payload + (size_t)binary_len;
+
+		memset(raw_caps + payload, '#', (size_t)binary_len);
+		/* Leave delimiter/whitespace validation to the existing CAPS parser. */
+	}
+	return 0;
+}
+
 int ddcci_caps(struct monitor* mon)
 {
 	if (mon->__vtable) {
@@ -464,27 +453,34 @@ int ddcci_caps(struct monitor* mon)
 		return mon->caps.raw_caps ? (int)strlen(mon->caps.raw_caps) : -1;
 	}
 
-	mon->caps.raw_caps = (char*)malloc(16);
-	int bufferpos = 0;
+	/* The terminating empty reply must still be addressable by a 16-bit offset. */
+	const size_t max_caps_length = 0xffff;
+	size_t bufferpos = 0;
+	char *raw_caps, *resized;
 	unsigned char buf[64];	/* 64 bytes chunk (was 35, but 173P+ send 43 bytes chunks) */
-	int offset = 0;
-	int len, i;
+	int len, fragment_len;
 	int retries = 3;
-	
-	do {
-		mon->caps.raw_caps[bufferpos] = 0;
-		if (retries == 0) {
-			return -1;
-		}
-		
-		len = ddcci_raw_caps(mon, offset, buf, sizeof(buf));
+
+	free(mon->caps.raw_caps);
+	mon->caps.raw_caps = NULL;
+	raw_caps = malloc(1);
+	if (!raw_caps)
+		return -1;
+	raw_caps[0] = '\0';
+
+	for (;;) {
+		if (retries == 0)
+			goto fail;
+
+		len = ddcci_raw_caps(mon, (unsigned int)bufferpos, buf, sizeof(buf));
 		if (len < 0) {
 			retries--;
 			continue;
 		}
 		
-		if (len < 3 || buf[0] != DDCCI_REPLY_CAPS || (buf[1] * 256 + buf[2]) != offset) 
-		{
+		fragment_len = ddccontrol_ddcci_parse_caps_reply(buf, (size_t)len,
+			(unsigned int)bufferpos);
+		if (fragment_len < 0) {
 			if (!mon->probing || verbosity) {
 				fprintf(stderr, _("Invalid sequence in caps.\n"));
 			}
@@ -492,58 +488,35 @@ int ddcci_caps(struct monitor* mon)
 			continue;
 		}
 
-		mon->caps.raw_caps = (char*)realloc(mon->caps.raw_caps, bufferpos + len - 2);
-		for (i = 3; i < len; i++) {
-			mon->caps.raw_caps[bufferpos++] = buf[i];
-		}
-		
-		offset += len - 3;
-		
+		if (fragment_len == 0)
+			break;
+		if ((size_t)fragment_len > max_caps_length - bufferpos)
+			goto fail;
+
+		resized = realloc(raw_caps, bufferpos + (size_t)fragment_len + 1);
+		if (!resized)
+			goto fail;
+		raw_caps = resized;
+		memcpy(raw_caps + bufferpos, buf + 3, (size_t)fragment_len);
+		bufferpos += (size_t)fragment_len;
+		raw_caps[bufferpos] = '\0';
 		retries = 3;
-	} while (len != 3);
-
-#if 0
-	/* Test CAPS with binary data */
-	mon->caps.raw_caps = realloc(mon->caps.raw_caps, 2048);
-	strcpy(mon->caps.raw_caps, "( prot(monitor) type(crt) edid bin(128(");
-	bufferpos = strlen(mon->caps.raw_caps);
-	for (i = 0; i < 128; i++) {
-		mon->caps.raw_caps[bufferpos++] = i;
-	}
-	strcpy(&mon->caps.raw_caps[bufferpos], ")) vdif bin(128(");
-	bufferpos += strlen(")) vdif bin(128(");	
-	for (i = 0; i < 128; i++) {
-		mon->caps.raw_caps[bufferpos++] = i;
-	}
-	strcpy(&mon->caps.raw_caps[bufferpos], ")) vcp (10 12 16 18 1A 50 92)))");
-	bufferpos += strlen(")) vcp (10 12 16 18 1A 50 92)))");
-	/* End */
-#endif
-	
-	mon->caps.raw_caps[bufferpos] = 0;
-
-	char* last_substr = mon->caps.raw_caps;
-	char* endptr;
-	while ((last_substr = strstr(last_substr, "bin("))) {
-		last_substr += 4;
-		len = strtol(last_substr, &endptr, 0);
-		if (*endptr != '(') {
-			printf("Invalid bin in CAPS.\n");
-			continue;
-		}
-		for (i = 0; i < len; i++) {
-			*(++endptr) = '#';
-		}
-		last_substr += len;
-	}
-	
-	if (ddcci_parse_caps(mon->caps.raw_caps, &mon->caps, 1) < 0) {
-		free(mon->caps.raw_caps);
-		mon->caps.raw_caps = NULL;
-		return -1;
 	}
 
-	return bufferpos;
+	if (ddcci_normalize_caps(raw_caps, bufferpos) < 0) {
+		if (!mon->probing || verbosity)
+			fprintf(stderr, _("Invalid binary data in caps.\n"));
+		goto fail;
+	}
+	if (ddcci_parse_caps(raw_caps, &mon->caps, 1) < 0)
+		goto fail;
+
+	mon->caps.raw_caps = raw_caps;
+	return (int)bufferpos;
+
+fail:
+	free(raw_caps);
+	return -1;
 }
 
 /* save current settings */
@@ -661,7 +634,17 @@ static int ddcci_open_with_addr(struct monitor* mon, const char* filename, int a
 	caps_result = ddcci_caps(mon);
 	mon->db = ddcci_create_db(mon->pnpid, &mon->caps, 1);
 	mon->fallback = 0; /* No fallback */
+	if (!mon->db && ddcci_monitor_file_matches(mon->pnpid)) {
+		/* An explicitly selected definition must never become a generic one. */
+		mon->fallback = -1;
+		return -1;
+	}
 	
+	if (!mon->db && ddcci_db_requirements_failed()) {
+		mon->fallback = -1; /* Required semantics prohibit generic fallback. */
+		return -1;
+	}
+
 	if (!mon->db) {
 		/* Fallback on manufacturer generic profile */
 		char buffer[8]; /* 3 chars (pnpid) + 3 chars (suffix) + 1 null terminator + 1 for safety */
@@ -682,6 +665,11 @@ static int ddcci_open_with_addr(struct monitor* mon, const char* filename, int a
 			break;
 		}
 		
+		if (!mon->db && ddcci_db_requirements_failed()) {
+			mon->fallback = -1;
+			return -1;
+		}
+
 		if (!mon->db) {
 			/* Fallback on VESA generic profile */
 			mon->db = ddcci_create_db("VESA", &mon->caps, 1);
@@ -689,6 +677,11 @@ static int ddcci_open_with_addr(struct monitor* mon, const char* filename, int a
 		}
 	}
 	
+	if (!mon->db && ddcci_db_requirements_failed()) {
+		mon->fallback = -1;
+		return -1;
+	}
+
 	if ((mon->db) && (mon->db->init == samsung)) {
 		if (ddcci_writectrl(mon, DDCCI_CTRL, DDCCI_CTRL_ENABLE, 0) < 0) {
 			return -1;
@@ -741,7 +734,7 @@ int ddcci_close(struct monitor* mon)
 	}
 	else
 	{ /* Alternate way of init mode detecting for unsupported monitors */
-		if (strncmp(mon->pnpid, "SAM", 3) == 0) {
+		if (mon->fallback >= 0 && strncmp(mon->pnpid, "SAM", 3) == 0) {
 			if ((ddcci_writectrl(mon, DDCCI_CTRL, DDCCI_CTRL_DISABLE, 0)) < 0) {
 				return -1;
 			}

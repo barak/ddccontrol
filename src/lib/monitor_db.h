@@ -120,16 +120,36 @@ typedef struct monitor_db MonitorDB;
 typedef char ddccontrol_abi_monitor_db_name_must_be_first[
 	offsetof(struct monitor_db, name) == 0 ? 1 : -1];
 
-/* Load monitor profile data from the XML database.
+/* Load monitor profile data from the current immutable CBOR or XML session.
+ * pnpname must be a NUL-terminated string; caps and its C-allocated entries
+ * must be valid and exclusively writable during the call.
  * The returned tree is allocated by the library with the C allocator and must
- * be released with ddcci_free_db(). */
+ * be released with ddcci_free_db(). Returns NULL on failure (including null
+ * arguments or a caught Rust panic). */
 struct monitor_db* ddcci_create_db(const char* pnpname, struct caps* caps, int faulttolerance);
-/* Free a monitor database returned by ddcci_create_db(). */
+/* Free an intact, exclusively owned monitor database returned by
+ * ddcci_create_db(), exactly once. NULL is accepted. */
 void ddcci_free_db(struct monitor_db* mon_db);
 
-/* Initialize monitor database subsystem. */
+/* Initialize an immutable database snapshot, preferring ddccontrol-db.cbor
+ * in the selected directory. Missing CBOR uses XML; invalid present CBOR fails.
+ * usedatadir is NULL for the default
+ * directory or a NUL-terminated path, copied during the call. Returns 1 on
+ * success, 0 on failure (including a caught Rust panic). */
 int ddcci_init_db(char* usedatadir);
-/* Release monitor database subsystem resources. */
+/* Validate and snapshot one monitor XML file for this process only, after
+ * ddcci_init_db() and before monitor discovery. The basename must be its PNP ID
+ * (for example DEL1234.xml); includes and options use the initialized database.
+ * filename is copied. pnpid is NULL or points to eight writable bytes, receiving
+ * the NUL-terminated ID only on success. Returns 1 on success, 0 on failure
+ * without replacing a previous override. Initialization/release clears it. */
+int ddcci_set_monitor_file(const char* filename, char* pnpid);
+/* Return 1 only for the exact PNP ID currently overridden; 0 for NULL or no
+ * matching override. pnpid must otherwise be a readable NUL-terminated string.
+ * Callers must not fall back to a generic profile if this override fails. */
+int ddcci_monitor_file_matches(const char* pnpid);
+/* Release monitor database subsystem resources. Caller-owned monitor trees
+ * remain valid. None of these entry points unwind a Rust panic into C. */
 void ddcci_release_db();
 
 #endif

@@ -12,6 +12,7 @@ DDCcontrol consists of:
 
 * `ddccontrol` - command-line tool for monitor parameters control
 * `gddccontrol` - GUI tool for monitor parameters control
+* `ddccontrol-scanmonitor` - create a monitor database XML file from a connected monitor
 
 DDCcontrol communicates with monitors from userspace through the Linux
 `i2c-dev` interface (`/dev/i2c-*`). AMD ADL and legacy direct PCI backends have
@@ -35,15 +36,37 @@ DDCcontrol tools, `ddccontrol` and `gddccontrol` can be installed from official 
 
 You might need to restart your system after installing `i2c-tools`.
 
+### Upstream release repositories
+
+For the signed Debian and Fedora repositories built from upstream releases, see
+[package repository installation and release setup](doc/releasing-packages.md).
+
 ### Installation from sources
+
+Building requires Rust and Cargo 1.77 or newer. The workspace declares this
+minimum in `Cargo.toml`, and CI tests Rust 1.77.0, 1.85.0, and stable. Rust 1.77
+provides [`offset_of!` and C-string literals](https://blog.rust-lang.org/2024/03/21/Rust-1.77.0/)
+for the Rust/C ABI tests. Ubuntu 24.04's default Rust 1.75 is too old; install
+`cargo-1.77` and `rustc-1.77`, then set `CARGO=cargo-1.77`, `RUSTC=rustc-1.77`,
+and `RUSTDOC=rustdoc-1.77` when configuring and building. The CI containers
+select these versioned tools automatically. The Rust 1.85 toolchain
+shipped in [Debian 13 (trixie)](https://packages.debian.org/trixie/rustc) meets
+the minimum, including on `ppc64el`, `riscv64`, and `s390x`. Debian 12 (bookworm)'s
+standard [Rust 1.63 package](https://packages.debian.org/bookworm/rustc) is too old;
+building there requires a newer toolchain. This is a source-build requirement,
+not a change to the installed application's runtime requirements.
+
+Keep Cargo.lock in format 3. Dependency updates must pass the minimum-version
+CI job; raising the minimum is an explicit compatibility change. The existing
+Rust dependencies and C ABI layouts are unchanged.
 
 Install build dependencies:
 
-* on Ubuntu: `sudo apt install intltool i2c-tools libxml2-dev libgtk3.0-dev liblzma-dev`
+* on Ubuntu: `sudo apt install intltool i2c-tools libxml2-dev libgtk3.0-dev libglib2.0-dev liblzma-dev`
 * on Solus: `sudo eopkg install -c system.devel`  
   `sudo eopkg install autoconf automake intltool i2c-tools m4 diffutils libtool-devel xz-devel libxml2-devel libgtk-3-devel`
 * on others: install autotools, intltool, i2c-tools, libxml2 development files,
-  GTK 3 development files and xz/lzma development files using your
+  GTK 3, GLib/GIO development files and xz/lzma development files using your
   distribution's package manager.
 
 Clone, build and install built version:
@@ -59,10 +82,92 @@ sudo make install
 
 Monitor database is required for proper functionality. See for [ddccontrol-db installation](https://github.com/ddccontrol/ddccontrol-db#installation).
 
+The DDC/CI protocol can be tested and fuzzed without a monitor. See
+[the protocol crate](crates/ddccontrol-protocol/README.md) for its API,
+compatibility behavior, and test commands.
+
+### Rust development checks
+
+Run these checks before submitting Rust changes (CI uses stable for formatting
+and Clippy):
+
+```shell
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo test --workspace --all-features --locked
+```
+
+Also run `make check` after building to exercise the C ABI and daemon consumers.
+See [the Rust migration status and plan](rust-porting.txt) for subsystem status,
+compatibility coverage, and remaining work.
+
 ## Contributing to the Monitor Database
 
-Follow the instructions on https://github.com/ddccontrol/ddccontrol-db/blob/master/doc/how-to-add-a-monitor.md for inclusion. 
-It often merely involves adapting a few standard capabilities as many [pull requests](https://github.com/ddccontrol/ddccontrol-db/pulls) show.
+For a monitor that is missing from the database, run:
+
+```shell
+ddccontrol-scanmonitor
+```
+
+The scanner selects the only detected monitor automatically, or asks you
+to select one when several are connected. It always accesses `/dev/i2c-*`
+directly, with no environment variable needed. You need read and write permission
+on these devices; if necessary, run `sudo ddccontrol-scanmonitor`.
+It reads the monitor's EDID, capabilities and supported controls, then writes a
+database XML file named after the monitor's PnP ID, for example `DEL1234.xml`, in
+the current directory. Existing files are never overwritten. The scanner does
+not change control values.
+
+The generated XML enables known controls whose values could be read and leaves
+uncertain controls commented out, with notes to help you test them. It uses the
+installed database's `options.xml` to identify controls and allowed values.
+Monitor-specific quirks, including special initialization or controls missing
+from the capabilities string, may still need manual edits.
+
+For a specific monitor or another output location:
+
+```shell
+ddccontrol-scanmonitor --list
+ddccontrol-scanmonitor dev:/dev/i2c-4 --output ./DEL1234.xml
+```
+
+Open the generated definition directly to try it:
+
+```shell
+DDCCONTROL_NO_DAEMON=1 gddccontrol --monitor-file ./DEL1234.xml
+DDCCONTROL_NO_DAEMON=1 ddccontrol --monitor-file ./DEL1234.xml
+```
+
+Keep the filename `<PNPID>.xml`, for example `DEL1234.xml`, so the definition
+applies only to that monitor model. The CLI selects matching monitors when no
+device is supplied; in the GUI, select the matching screen from the monitor list.
+The file is read for this process only. Relaunch the application after editing
+it; copying it into the system database or restarting the service is not needed.
+The installed database still supplies `options.xml` and included definitions.
+
+`--monitor-file` requires `DDCCONTROL_NO_DAEMON=1` and permission to access
+`/dev/i2c-*` directly. If necessary, run with
+`sudo env DDCCONTROL_NO_DAEMON=1 ...`.
+
+To install a tested definition permanently, copy it into the database's `monitor`
+directory and restart the service. Use the path printed by the scanner; a typical
+package installation uses:
+
+```shell
+sudo cp -i DEL1234.xml /usr/share/ddccontrol-db/monitor/DEL1234.xml
+sudo systemctl restart ddccontrol.service
+```
+
+Source installations commonly use `/usr/local/share/ddccontrol-db` instead.
+Use `--db-path /path/to/ddccontrol-db` to generate XML against a different
+database, such as a checkout of `ddccontrol-db`. This option selects the control
+definitions for generation. Use the same database with the preview application's
+`-b` option.
+
+Submit the tested XML file in a pull request to
+[ddccontrol-db](https://github.com/ddccontrol/ddccontrol-db), following the
+[monitor contribution guide](https://github.com/ddccontrol/ddccontrol-db/blob/master/doc/how-to-add-a-monitor.md).
+See `ddccontrol-scanmonitor --help` or `man ddccontrol-scanmonitor` for all options.
 
 
 ## Usage

@@ -2,20 +2,27 @@
 name = "ddccontrol-db"
 version = "0.1.0"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Rust monitor database XML parser and C ABI bridge for ddccontrol"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["rlib", "staticlib"]
 
 [features]
 gettext = []
 
 [dependencies]
+ddccontrol-xml = { path = "../ddccontrol-xml" }
+ddccontrol-db-format = { path = "../ddccontrol-db-format" }
 ddccontrol-caps = { path = "../ddccontrol-caps" }
 ddccontrol-edid = { path = "../ddccontrol-edid" }
+ddccontrol-monitorlist = { path = "../ddccontrol-monitorlist" }
 ddccontrol-profile = { path = "../ddccontrol-profile" }
-encoding_rs = "0.8"
+ddccontrol-protocol = { path = "../ddccontrol-protocol" }
 libc = "0.2"
 roxmltree = "0.20"
+
+[dev-dependencies]
+ciborium = "0.2.2"

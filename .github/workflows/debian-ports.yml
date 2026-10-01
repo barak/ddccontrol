@@ -72,10 +72,11 @@ jobs:
               cd /tmp/ddccontrol
               git config --global --add safe.directory /tmp/ddccontrol
               git clean -fdX
+              ./.github/ci/install-rust.sh
               ./autogen.sh
               ./configure --enable-doc CFLAGS="$CFLAGS"
               make -j$(nproc)
-              make -C src/lib check
+              make check
               ./scripts/format_code.sh
               find -name "*.orig" -exec rm -v {} \;
               ./scripts/check_git_clean_after_build.sh

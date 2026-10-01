@@ -2,8 +2,31 @@ SUBDIRS = data src po man $(DOC)
 DIST_SUBDIRS = data src po man doc
 
 EXTRA_DIST = config.rpath intltool-extract.in intltool-merge.in intltool-update.in \
+	rust-porting.txt \
 	Cargo.toml \
 	Cargo.lock \
+	crates/ddccontrol-db-format/Cargo.toml \
+	crates/ddccontrol-db-format/README.md \
+	crates/ddccontrol-db-format/src/lib.rs \
+	crates/ddccontrol-db-format/src/writing.rs \
+	crates/ddccontrol-db-format/src/descriptors.rs \
+	crates/ddccontrol-db-format/src/xml.rs \
+	crates/ddccontrol-dbgen/Cargo.toml \
+	crates/ddccontrol-dbgen/README.md \
+	crates/ddccontrol-dbgen/src/lib.rs \
+	crates/ddccontrol-dbgen/src/main.rs \
+	crates/ddccontrol-dbgen/tests/producer.rs \
+	crates/ddccontrol-dbgen/fixtures/base-v1.snapshot \
+	crates/ddccontrol-dbgen/fixtures/newer-v1.snapshot \
+	crates/ddccontrol-dbgen/fixtures/source/options.xml \
+	crates/ddccontrol-dbgen/fixtures/source/monitor/TST0001.xml \
+	crates/ddccontrol-dbgen/fixtures/source/monitor/VESA.xml \
+	crates/ddccontrol-dbgen/fixtures/newer-source/options.xml \
+	crates/ddccontrol-dbgen/fixtures/newer-source/monitor/NEW0001.xml \
+	crates/ddccontrol-dbgen/fixtures/newer-source/monitor/TST0001.xml \
+	crates/ddccontrol-dbgen/fixtures/newer-source/monitor/VESA.xml \
+	scripts/release/build-dbgen.sh \
+	scripts/release/check-dbgen.sh \
 	crates/ddccontrol-caps/Cargo.toml \
 	crates/ddccontrol-caps/README.md \
 	crates/ddccontrol-caps/fixtures/basic_lcd.caps \
@@ -22,6 +45,17 @@ EXTRA_DIST = config.rpath intltool-extract.in intltool-merge.in intltool-update.
 	crates/ddccontrol-profile/README.md \
 	crates/ddccontrol-profile/src/lib.rs \
 	crates/ddccontrol-profile/tests/profile.rs \
+	crates/ddccontrol-monitorlist/Cargo.toml \
+	crates/ddccontrol-monitorlist/README.md \
+	crates/ddccontrol-monitorlist/src/lib.rs \
+	crates/ddccontrol-monitorlist/tests/monitorlist.rs \
+	crates/ddccontrol-protocol/Cargo.toml \
+	crates/ddccontrol-protocol/README.md \
+	crates/ddccontrol-protocol/src/lib.rs \
+	crates/ddccontrol-protocol/tests/protocol.rs \
+	crates/ddccontrol-protocol/fuzz/Cargo.toml \
+	crates/ddccontrol-protocol/fuzz/.gitignore \
+	crates/ddccontrol-protocol/fuzz/fuzz_targets/protocol.rs \
 	crates/ddccontrol-db/Cargo.toml \
 	crates/ddccontrol-db/README.md \
 	crates/ddccontrol-db/fixtures/compat-db/options.xml \
@@ -31,9 +65,76 @@ EXTRA_DIST = config.rpath intltool-extract.in intltool-merge.in intltool-update.
 	crates/ddccontrol-db/tests/unit/monitor_db.rs \
 	crates/ddccontrol-db/tests/unit/monitor_db_compatibility.rs \
 	crates/ddccontrol-db/tests/unit/profile_ffi_layout.rs \
-	crates/ddccontrol-db/src/lib.rs
+	crates/ddccontrol-db/tests/unit/monitor_list.rs \
+	crates/ddccontrol-db/src/monitor_list.rs \
+	crates/ddccontrol-db/src/lib.rs \
+	crates/ddccontrol-db/src/options.rs \
+	crates/ddccontrol-db/src/xml.rs \
+	crates/ddccontrol-xml/Cargo.toml \
+	crates/ddccontrol-xml/README.md \
+	crates/ddccontrol-xml/src/lib.rs \
+	crates/ddccontrol-db/src/protocol.rs \
+	crates/ddccontrol-scanmonitor/Cargo.toml \
+	crates/ddccontrol-scanmonitor/README.md \
+	crates/ddccontrol-scanmonitor/src/main.rs \
+	crates/ddccontrol-scanmonitor/src/backend.rs \
+	crates/ddccontrol-scanmonitor/src/xml.rs \
+	crates/ddccontrol-scanmonitor/tests/cli.rs \
+	crates/ddccontrol-scanmonitor/fixtures/options.xml \
+	crates/ddccontrol-db/src/cbor.rs \
+	crates/ddccontrol-db/examples/database_bench.rs \
+	crates/ddccontrol-db/tests/unit/cbor_integration.rs \
+	crates/ddccontrol-db/fixtures/cbor/README.md \
+	crates/ddccontrol-db/fixtures/cbor/compat.cbor \
+	crates/ddccontrol-db/fixtures/cbor/compat.json \
+	crates/ddccontrol-db/fixtures/cbor/compat.snapshot \
+	crates/ddccontrol-db/fixtures/cbor/reference-v1.cbor \
+	crates/ddccontrol-db/fixtures/cbor/reference-v1.json \
+	crates/ddccontrol-db/fixtures/cbor/reference-v1.tree \
+	crates/ddccontrol-db/fixtures/cbor/newer-v1.cbor \
+	crates/ddccontrol-db/fixtures/cbor/newer-v1.json \
+	crates/ddccontrol-db/fixtures/cbor/newer-v1.tree \
+	crates/ddccontrol-db/fixtures/cbor/descriptions-v1.cbor \
+	crates/ddccontrol-db/fixtures/cbor/descriptions-v1.json \
+	crates/ddccontrol-db/tests/frozen-v1/.gitignore \
+	crates/ddccontrol-db/tests/frozen-v1/Cargo.toml \
+	crates/ddccontrol-db/tests/frozen-v1/Cargo.lock \
+	crates/ddccontrol-db/tests/frozen-v1/README.md \
+	crates/ddccontrol-db/tests/frozen-v1/SHA256SUMS \
+	crates/ddccontrol-db/tests/frozen-v1/driver.c \
+	crates/ddccontrol-db/tests/frozen-v1/src/lib.rs \
+	crates/ddccontrol-db/tests/frozen-v1/src/cbor.rs \
+	crates/ddccontrol-db/tests/frozen-v1/src/protocol.rs \
+	crates/ddccontrol-db/tests/frozen-v1/caps/Cargo.toml \
+	crates/ddccontrol-db/tests/frozen-v1/caps/src/lib.rs \
+	scripts/check_cbor_frozen.sh \
+	scripts/check_cbor_gettext.sh
 DISTCLEANFILES = intltool-extract intltool-merge intltool-update
 DISTCHECK_CONFIGURE_FLAGS = --enable-doc --with-systemdsystemunitdir='$${prefix}/lib/systemd/system'
+
+RUST_SCANMONITOR = $(top_builddir)/target/release/ddccontrol-scanmonitor
+# Include transitive Rust sources so edits to shared crates rebuild the scanner.
+RUST_SCANMONITOR_DEPS = \
+	$(top_builddir)/config.status \
+	$(top_srcdir)/Cargo.toml \
+	$(top_srcdir)/Cargo.lock \
+	$(wildcard $(top_srcdir)/crates/*/Cargo.toml) \
+	$(wildcard $(top_srcdir)/crates/*/src/*.rs)
+
+all-local: $(RUST_SCANMONITOR)
+
+$(RUST_SCANMONITOR): $(RUST_SCANMONITOR_DEPS)
+	cd "$(top_srcdir)" && DDCONTROL_DATADIR="$(datadir)/ddccontrol-db" CARGO_TARGET_DIR="$(abs_top_builddir)/target" $(CARGO) build --release --locked -p ddccontrol-scanmonitor
+
+install-exec-local: $(RUST_SCANMONITOR)
+	$(MKDIR_P) "$(DESTDIR)$(bindir)"
+	$(INSTALL_PROGRAM) "$(RUST_SCANMONITOR)" "$(DESTDIR)$(bindir)/ddccontrol-scanmonitor$(EXEEXT)"
+
+uninstall-local:
+	rm -f "$(DESTDIR)$(bindir)/ddccontrol-scanmonitor$(EXEEXT)"
+
+clean-local:
+	rm -f "$(RUST_SCANMONITOR)"
 
 distclean-local:
 	rm -f po/.intltool-merge-cache.lock

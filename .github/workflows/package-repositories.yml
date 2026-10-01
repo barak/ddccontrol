@@ -1,0 +1,47 @@
+name: Package repository checks
+
+on:
+  workflow_call:
+    inputs:
+      source-ref:
+        type: string
+        default: ""
+  pull_request:
+    paths:
+      - '.github/workflows/*packages*.yml'
+      - '.github/workflows/release-please.yml'
+      - '.github/workflows/package-repositories.yml'
+      - '.github/workflows/build-dbgen.yml'
+      - 'scripts/release/**'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/*packages*.yml'
+      - '.github/workflows/release-please.yml'
+      - '.github/workflows/package-repositories.yml'
+      - '.github/workflows/build-dbgen.yml'
+      - 'scripts/release/**'
+
+permissions:
+  contents: read
+
+jobs:
+  repositories:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Install repository tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            apt-utils dpkg-dev rpm createrepo-c gnupg dnf shellcheck
+      - name: Check scripts and bundle extraction
+        run: |
+          shellcheck scripts/release/*.sh
+          node --test scripts/release/test-*.cjs
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/release/test-bundles.py
+      - name: Test signed repositories with APT and DNF
+        run: sudo scripts/release/test-repositories.sh
