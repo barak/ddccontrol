@@ -57,8 +57,11 @@ building there requires a newer toolchain. This is a source-build requirement,
 not a change to the installed application's runtime requirements.
 
 Keep Cargo.lock in format 3. Dependency updates must pass the minimum-version
-CI job; raising the minimum is an explicit compatibility change. The existing
-Rust dependencies and C ABI layouts are unchanged.
+CI job; raising the minimum is an explicit compatibility change. The `roxmltree`
+and `sha2` requirements allow newer versions for distribution packaging; the
+checked-in lockfile keeps upstream builds on the tested versions. Distribution
+maintainers selecting newer dependencies must use a Rust toolchain that meets
+those dependencies' minimum versions. The C ABI layouts are unchanged.
 
 Install build dependencies:
 
@@ -78,6 +81,15 @@ cd ddccontrol
 ./configure --prefix=/usr/local/ --sysconfdir=/etc --libexecdir=/usr/local/lib
 make
 sudo make install
+```
+
+To cross-compile, also pass the Rust target triple as `RUST_TARGET`, and tell
+Cargo which linker to use for that target, for example:
+
+```shell
+export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+./configure --host=aarch64-linux-gnu RUST_TARGET=aarch64-unknown-linux-gnu
+make
 ```
 
 Monitor database is required for proper functionality. See for [ddccontrol-db installation](https://github.com/ddccontrol/ddccontrol-db#installation).

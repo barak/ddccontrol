@@ -1,4 +1,4 @@
-AC_INIT([DDC/CI control tool],[3.4.0],[https://github.com/ddccontrol/ddccontrol/issues],[ddccontrol]) dnl x-release-please-version
+AC_INIT([DDC/CI control tool],[3.4.1],[https://github.com/ddccontrol/ddccontrol/issues],[ddccontrol]) dnl x-release-please-version
 AC_CONFIG_SRCDIR([src/ddccontrol/main.c])
 AC_CONFIG_HEADERS([src/config.h])
 AC_CONFIG_MACRO_DIR([m4])
@@ -23,6 +23,15 @@ AS_IF(["$CARGO" --version >/dev/null 2>&1],
       [AC_MSG_RESULT([yes])],
       [AC_MSG_RESULT([no])
        AC_MSG_ERROR([cargo was found but could not run. If this is rustup's cargo shim, install and select a Rust toolchain first, for example: rustup default stable. Alternatively set CARGO to a working cargo binary.])])
+AC_ARG_VAR([RUST_TARGET],
+  [Rust target triple to build the Rust components for (default: the Rust host)])
+AS_IF([test -n "$RUST_TARGET"],
+      [CARGO_TARGET_ARGS="--target $RUST_TARGET"
+       RUST_TARGET_SUBDIR="$RUST_TARGET/"],
+      [CARGO_TARGET_ARGS=""
+       RUST_TARGET_SUBDIR=""])
+AC_SUBST([CARGO_TARGET_ARGS])
+AC_SUBST([RUST_TARGET_SUBDIR])
 AM_PROG_AR
 AC_PROG_INSTALL
 AC_PROG_MKDIR_P

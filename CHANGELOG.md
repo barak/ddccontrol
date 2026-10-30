@@ -3,6 +3,31 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [3.4.1](https://github.com/ddccontrol/ddccontrol/compare/3.4.0...3.4.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **build:** avoid rerunning Cargo during installation ([#343](https://github.com/ddccontrol/ddccontrol/issues/343)) ([b38fc4e](https://github.com/ddccontrol/ddccontrol/commit/b38fc4e7ae042bfb4b7b5a003ab5618cf0c4f42f))
+* **build:** relax Rust dependencies for distro packaging ([#347](https://github.com/ddccontrol/ddccontrol/issues/347)) ([5e64e06](https://github.com/ddccontrol/ddccontrol/commit/5e64e06b9ca029a29c077aa8d8ddd4cc5cf90582))
+* **ci:** validate releases with the pinned database generator ([#342](https://github.com/ddccontrol/ddccontrol/issues/342)) ([fd97c26](https://github.com/ddccontrol/ddccontrol/commit/fd97c26711972fccd2611e339aa5a459ecdd09ec))
+
+
+### Documentation
+
+* keep Release Please pull requests automated ([#339](https://github.com/ddccontrol/ddccontrol/issues/339)) ([22b3050](https://github.com/ddccontrol/ddccontrol/commit/22b305018343a9733b1b70f2cfbd22033567a858))
+
+
+### Performance Improvements
+
+* **ci:** prebuild release package environments ([#349](https://github.com/ddccontrol/ddccontrol/issues/349)) ([e91a536](https://github.com/ddccontrol/ddccontrol/commit/e91a536a9f4ebf9f57eba651b82fe638728093ba))
+
+
+### Build System
+
+* allow cross-compiling the Rust components ([#345](https://github.com/ddccontrol/ddccontrol/issues/345)) ([ab8d220](https://github.com/ddccontrol/ddccontrol/commit/ab8d220cd4cd0f7b61bbcf3076491dd38adcd63a))
+* relax Cargo dependencies for distro packaging ([#348](https://github.com/ddccontrol/ddccontrol/issues/348)) ([53b3312](https://github.com/ddccontrol/ddccontrol/commit/53b33128185cb336b2a423180bad33a040d5a553)), closes [#344](https://github.com/ddccontrol/ddccontrol/issues/344)
+
 ## [3.4.0](https://github.com/ddccontrol/ddccontrol/compare/3.3.0...3.4.0) (2026-09-28)
 
 
@@ -17,7 +42,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Bug Fixes
 
+* **build:** avoid rerunning Cargo during installation ([#343](https://github.com/ddccontrol/ddccontrol/issues/343)) ([b38fc4e](https://github.com/ddccontrol/ddccontrol/commit/b38fc4e7ae042bfb4b7b5a003ab5618cf0c4f42f))
 * **ci:** upload release assets without editing release metadata ([#327](https://github.com/ddccontrol/ddccontrol/issues/327)) ([ff14dd3](https://github.com/ddccontrol/ddccontrol/commit/ff14dd31198931aa63ba35564b98edeeff95cd80))
+* **ci:** validate releases with the pinned database generator ([#342](https://github.com/ddccontrol/ddccontrol/issues/342)) ([fd97c26](https://github.com/ddccontrol/ddccontrol/commit/fd97c26711972fccd2611e339aa5a459ecdd09ec))
 * harden CAPS collection and Rust database FFI ([#321](https://github.com/ddccontrol/ddccontrol/issues/321)) ([bec744f](https://github.com/ddccontrol/ddccontrol/commit/bec744f9795e82caf3a4e0d84b0be0f72f7d109a))
 * isolate and validate DDC/CI protocol frames ([#326](https://github.com/ddccontrol/ddccontrol/issues/326)) ([fcd7c56](https://github.com/ddccontrol/ddccontrol/commit/fcd7c56ff1cba765f2ecca56741b88586ec8dcec))
 * **scanmonitor:** remove D-Bus dependency ([#331](https://github.com/ddccontrol/ddccontrol/issues/331)) ([f8e9af1](https://github.com/ddccontrol/ddccontrol/commit/f8e9af18c4643e164a43062091e3ee1574b83f0c))
@@ -27,6 +54,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 * **db:** define the candidate CBOR format contract ([#332](https://github.com/ddccontrol/ddccontrol/issues/332)) ([47bd201](https://github.com/ddccontrol/ddccontrol/commit/47bd201647190632cde68350478d8abb3d35fa42))
 * **db:** require unique CBOR extension identities ([#337](https://github.com/ddccontrol/ddccontrol/issues/337)) ([1b410cb](https://github.com/ddccontrol/ddccontrol/commit/1b410cbdb1245145830d182146ef7e9c4a262b21))
+* keep Release Please pull requests automated ([#339](https://github.com/ddccontrol/ddccontrol/issues/339)) ([22b3050](https://github.com/ddccontrol/ddccontrol/commit/22b305018343a9733b1b70f2cfbd22033567a858))
 
 
 ### Tests
