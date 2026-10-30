@@ -1,3 +1,12 @@
+ddccontrol (3.4.1-1) unstable; urgency=medium
+
+  * New upstream version
+  * Drop rust-cross.patch, merged upstream
+  * Build-depend on librust-sha2-dev instead of librust-sha2-0.10-dev,
+    now that upstream accepts sha2 0.11
+
+ -- Barak A. Pearlmutter <bap@debian.org>  Fri, 30 Oct 2026 22:25:35 +0000
+
 ddccontrol (3.4.0-1) unstable; urgency=medium
 
   * New upstream version
